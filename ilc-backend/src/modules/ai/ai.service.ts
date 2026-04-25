@@ -87,13 +87,14 @@ export class AiService {
     return { category: d.categoryLabel, intent: d.intent, riskLevel: d.riskLevel };
   }
 
-  async chat(userId: string, args: { message: string; sessionId?: string; history?: ChatHistoryItem[] }) {
+  async chat(userId: string, args: { message: string; sessionId?: string }) {
     const t0 = Date.now();
     const requestId = randomUUID();
     const promptVersion = getPrompt('legal-chat-v1').version;
 
     // Handle Session
     let sessionId = args.sessionId;
+    let chatHistory: ChatHistoryItem[] = [];
     if (!sessionId) {
       const newSession = await this.sessions.save(this.sessions.create({ userId }));
       sessionId = newSession.id;
@@ -102,6 +103,17 @@ export class AiService {
       if (!existing) {
         throw new NotFoundException('Session not found or belongs to another user');
       }
+      
+      // Load previous messages from database (limit 10 for context)
+      const recentMessages = await this.messages.find({
+        where: { sessionId },
+        order: { createdAt: 'DESC' },
+        take: 10,
+      });
+      
+      chatHistory = recentMessages
+        .reverse()
+        .map(m => ({ role: m.role, content: m.content }));
     }
 
     // Save user message
@@ -167,7 +179,7 @@ export class AiService {
 
     const gen = await this.generateLegalChatV1({
       message: args.message,
-      history: args.history ?? [],
+      history: chatHistory,
       retrieved,
       specialist,
       classification,

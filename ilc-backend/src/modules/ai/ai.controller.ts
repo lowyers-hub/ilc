@@ -24,7 +24,7 @@ export class AiController {
   @UseGuards(RedisRateLimitGuard)
   @RateLimit({ key: 'ai.chat', limit: 20, windowSec: 60 })
   async chat(@CurrentUser() u: { userId: string }, @Body() dto: ChatDto) {
-    return this.ai.chat(u.userId, { message: dto.message, sessionId: dto.sessionId, history: dto.history });
+    return this.ai.chat(u.userId, { message: dto.message, sessionId: dto.sessionId });
   }
 
   @Get('chat/sessions')
