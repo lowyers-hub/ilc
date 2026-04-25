@@ -146,6 +146,12 @@ export class AiService {
         .getMany();
 
       const memoryLines: string[] = [];
+      const structuredMemory = {
+        userId,
+        lastUpdated: new Date().toISOString(),
+        pastIssues: [] as Array<{ sessionId: string; issue: string; status: string; recommendation: string }>
+      };
+
       for (const s of otherSessions) {
         const firstUserMsg = firstUserMessages.find(m => m.sessionId === s.id);
         const lastAsstMsg = lastAssistantMessages.find(m => m.sessionId === s.id);
@@ -161,10 +167,18 @@ export class AiService {
           }
           
           memoryLines.push(`- Isu: "${issue}..." | Status: ${status} | Rekomendasi Spesialisasi: ${recommendation}`);
+          structuredMemory.pastIssues.push({
+            sessionId: s.id,
+            issue: `${issue}...`,
+            status,
+            recommendation
+          });
         }
       }
       if (memoryLines.length > 0) {
         userMemory = memoryLines.join('\n');
+        // Store structured memory in cache for analytics and personalization
+        await this.cache.setJson(`ai:memory:${userId}`, structuredMemory, 86400 * 7); // Cache for 7 days
       }
     }
 
