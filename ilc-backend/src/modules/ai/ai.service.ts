@@ -335,6 +335,20 @@ export class AiService {
       clarifyingFacts
     };
     const clarifyingQuestions = pickClarifyingQuestions(args.message, specialist.clarifyingFacts, 4);
+    
+    // Determine confidence before generating the prompt to adapt language strictly
+    const confidence: LegalChatResponse['confidence'] = deriveConfidence({
+      hasContext,
+      clarifyingQuestionsCount: clarifyingQuestions.length,
+      riskLevel: detailed.riskLevel,
+      lowCoverage,
+      isAmbiguous
+    });
+
+    if (confidence === 'low') {
+      adaptiveTone += '\nSTRICT_LANGUAGE_RULE: Confidence is LOW. WAJIB gunakan kata-kata seperti "kemungkinan", "umumnya", atau "perlu verifikasi lebih lanjut". JANGAN SEKALI-KALI menggunakan bahasa yang pasti atau menjamin hasil. Hindari pernyataan absolut.';
+    }
+
     const gen = await this.generateLegalChatV1({
       message: args.message,
       history: chatHistory,
@@ -357,14 +371,6 @@ export class AiService {
       validated.escalation = true;
       validated.escalationMeta = fallbackEscalationMeta;
     }
-
-    const confidence: LegalChatResponse['confidence'] = deriveConfidence({
-      hasContext,
-      clarifyingQuestionsCount: clarifyingQuestions.length,
-      riskLevel: detailed.riskLevel,
-      lowCoverage,
-      isAmbiguous
-    });
 
     const sanitized = sanitizeLegalChat(validated, this.safety, hasContext);
 
