@@ -69,7 +69,8 @@ export type ChatMessage = {
     disclaimer: string;
     whenNeedLawyer?: string[];
     confidence?: 'low' | 'medium' | 'high';
-    promptVersion?: string;
+  fallbackUsed?: boolean;
+  promptVersion?: string;
     requestId?: string;
   };
   citations?: Array<{

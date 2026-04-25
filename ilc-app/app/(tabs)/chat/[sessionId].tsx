@@ -1,7 +1,7 @@
 import { FlashList } from '@shopify/flash-list';
 import { router, useLocalSearchParams } from 'expo-router';
-import React from 'react';
-import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { ActivityIndicator, Text, TextInput, View } from 'react-native';
 
 import { Button } from '@/src/components/Button';
 import { Chip } from '@/src/components/Chip';
@@ -12,12 +12,10 @@ import { isRecording, startRecording, stopRecording } from '@/src/features/voice
 import { useTranscription } from '@/src/features/voice/useTranscription';
 import { enforceVoiceOrThrow } from '@/src/lib/entitlements/enforce';
 import { useUIStore } from '@/src/lib/stores/uiStore';
-import { useTheme } from '@/src/lib/theme/useTheme';
 import type { ChatMessage } from '@/src/types/models';
 
 export default function ChatThreadScreen() {
-  const { palette, tokens } = useTheme();
-  const { sessionId } = useLocalSearchParams<{ sessionId: string }>();
+  const { sessionId, msg: initialMsg } = useLocalSearchParams<{ sessionId: string, msg?: string }>();
 
   const messagesQuery = useChatMessages(String(sessionId));
   const sendMutation = useSendChatMessage(String(sessionId));
@@ -29,6 +27,12 @@ export default function ChatThreadScreen() {
   const tx = useTranscription();
   const startingRef = React.useRef(false);
   const list = messagesQuery.data ?? [];
+
+  useEffect(() => {
+    if (initialMsg && list.length === 0 && !sendMutation.isPending) {
+      sendMutation.mutateAsync(initialMsg);
+    }
+  }, [initialMsg, list.length]);
 
   async function onSend() {
     const text = draft.trim();
@@ -64,85 +68,75 @@ export default function ChatThreadScreen() {
   }
 
   return (
-    <Screen style={{ paddingHorizontal: tokens.space.lg, paddingTop: tokens.space.lg }}>
-      <Text style={{ color: palette.text, fontSize: 18, fontWeight: '800', marginBottom: tokens.space.md }}>
-        Konsultasi
-      </Text>
+    <Screen className="px-4 md:px-8 pt-6">
+      <View className="flex-row items-center justify-between mb-4">
+        <Text className="text-text text-[24px] font-bold">Konsultasi</Text>
+      </View>
 
       <FlashList
         data={list}
+        inverted
         keyExtractor={(m) => m.id}
         contentContainerStyle={{ paddingBottom: 120 }}
         renderItem={({ item }) => <MessageBubble msg={item} />}
         ListFooterComponent={
           sendMutation.isPending ? (
-            <Text style={{ color: palette.subtext, marginTop: tokens.space.sm }}>AI sedang menyiapkan jawaban…</Text>
+            <View className="p-4 items-start mb-4">
+              <View className="bg-surface border border-divider px-4 py-3 rounded-2xl rounded-tl-sm flex-row items-center gap-3">
+                <ActivityIndicator size="small" color="var(--color-accent)" />
+                <Text className="text-subtext text-sm">AI sedang menganalisis...</Text>
+              </View>
+            </View>
           ) : null
         }
         ListEmptyComponent={
-          messagesQuery.isLoading ? <Text style={{ color: palette.subtext }}>Memuat…</Text> : null
+          messagesQuery.isLoading ? (
+            <Text className="text-subtext text-center mt-10">Memuat...</Text>
+          ) : null
         }
       />
 
-      <View
-        style={{
-          position: 'absolute',
-          left: tokens.space.lg,
-          right: tokens.space.lg,
-          bottom: tokens.space.lg,
-          gap: tokens.space.sm,
-        }}
-      >
-        <View style={{ flexDirection: 'row', gap: tokens.space.sm }}>
+      <View className="absolute left-4 right-4 md:left-8 md:right-8 bottom-6 bg-bg pt-2">
+        <View className="flex-row gap-3">
           <EntitlementGate
             featureKey="chat.voice"
             accessibilityLabel="Voice input"
             testID="voice-button"
-            style={{
-              width: 48,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderWidth: 1,
-              borderColor: palette.divider,
-              borderRadius: tokens.radius.md,
-              backgroundColor: palette.surface,
-            }}
+            className={`w-12 items-center justify-center border border-divider rounded-xl bg-surface transition-colors ${recording ? 'bg-danger/10 border-danger' : 'hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer'}`}
             onAllowedPress={onVoicePress}
           >
             {recording ? (
               <View
                 testID="recording-indicator"
-                style={{ width: 10, height: 10, borderRadius: 99, backgroundColor: palette.danger }}
+                className="w-3 h-3 rounded-full bg-danger animate-pulse"
               />
             ) : (
-              <Text style={{ color: palette.text, fontSize: 18 }}>🎙</Text>
+              <Text className="text-text text-xl">🎙</Text>
             )}
           </EntitlementGate>
 
           <TextInput
             value={draft}
             onChangeText={setDraft}
-            placeholder="Tulis pertanyaan hukum…"
-            placeholderTextColor={palette.subtext}
+            placeholder={list.length === 0 ? "Ketik pertanyaan hukum Anda di sini..." : "Balas pesan..."}
+            placeholderTextColor="var(--color-subtext)"
             testID="chat-composer-input"
-            style={{
-              flex: 1,
-              borderWidth: 1,
-              borderColor: palette.divider,
-              borderRadius: tokens.radius.md,
-              paddingHorizontal: 14,
-              paddingVertical: 12,
-              backgroundColor: palette.surface,
-              color: palette.text,
-            }}
+            className="flex-1 border border-divider rounded-xl px-4 py-3 bg-surface text-text text-base outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-all"
+            multiline
+            maxLength={1000}
           />
-          <Button title="Kirim" onPress={onSend} disabled={sendMutation.isPending || !draft.trim()} />
+          <Button 
+            title="Kirim" 
+            onPress={onSend} 
+            disabled={sendMutation.isPending || !draft.trim()} 
+            className="self-end h-[48px]"
+          />
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={{ color: palette.subtext, fontSize: 12 }}>
-            Catatan: jawaban AI bersifat informatif dan bukan nasihat hukum final.
+        <View className="flex-row items-center justify-between mt-3">
+          <Text className="text-subtext text-xs">
+            Catatan: AI memberikan panduan awal, bukan nasihat hukum final.
           </Text>
-          {tx.isUploading ? <ActivityIndicator size="small" /> : null}
+          {tx.isUploading ? <ActivityIndicator size="small" color="var(--color-subtext)" /> : null}
         </View>
       </View>
     </Screen>
@@ -150,34 +144,29 @@ export default function ChatThreadScreen() {
 }
 
 function MessageBubble({ msg }: { msg: ChatMessage }) {
-  const { palette, tokens } = useTheme();
   const isUser = msg.role === 'user';
 
   return (
-    <View style={{ marginBottom: tokens.space.md, alignItems: isUser ? 'flex-end' : 'flex-start' }}>
+    <View className={`mb-6 ${isUser ? 'items-end' : 'items-start'}`}>
       <View
-        style={{
-          maxWidth: '92%',
-          paddingHorizontal: 14,
-          paddingVertical: 12,
-          borderRadius: tokens.radius.lg,
-          backgroundColor: isUser ? `${palette.accent}22` : palette.surface,
-          borderWidth: 1,
-          borderColor: palette.divider,
-        }}
+        className={`max-w-[92%] px-4 py-3 border border-divider ${
+          isUser 
+            ? 'rounded-2xl rounded-tr-sm bg-accent/10' 
+            : 'rounded-2xl rounded-tl-sm bg-surface shadow-sm'
+        }`}
       >
         {msg.structured ? (
           <StructuredAI msg={msg} />
         ) : (
-          <Text style={{ color: palette.text, lineHeight: 20 }}>{msg.content}</Text>
+          <Text className="text-text text-[15px] leading-relaxed">{msg.content}</Text>
         )}
 
         {msg.citations?.length ? (
-          <View style={{ marginTop: tokens.space.sm, gap: tokens.space.xs }}>
-            <Chip label="Citations" tone="accent" />
+          <View className="mt-3 gap-1.5 border-t border-divider/50 pt-3">
+            <Chip label="Referensi Dokumen" tone="accent" />
             {msg.citations.slice(0, 2).map((c) => (
-              <Text key={c.docId} style={{ color: palette.subtext, fontSize: 12, lineHeight: 16 }}>
-                • {c.title ?? c.docId}: {c.snippet}
+              <Text key={c.docId} className="text-subtext text-xs leading-relaxed">
+                • <Text className="font-semibold">{c.title ?? c.docId}:</Text> {c.snippet}
               </Text>
             ))}
           </View>
@@ -188,88 +177,106 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
 }
 
 function StructuredAI({ msg }: { msg: ChatMessage }) {
-  const { palette, tokens } = useTheme();
   const ai = msg.structured!;
 
-  const sectionTitle = (t: string) => (
-    <Text style={{ color: palette.subtext, fontSize: 12, fontWeight: '800', marginTop: tokens.space.sm }}>
-      {t.toUpperCase()}
+  const SectionTitle = ({ children }: { children: string }) => (
+    <Text className="text-subtext text-[11px] font-bold mt-5 mb-1 uppercase tracking-wider">
+      {children}
     </Text>
   );
 
+  const confidenceTone = ai.confidence === 'high' ? 'success' : ai.confidence === 'medium' ? 'warning' : 'danger';
+  const confidenceHelper = ai.confidence === 'high' 
+    ? 'Konteks cukup kuat, tetap bukan nasihat final.' 
+    : ai.confidence === 'medium' 
+    ? 'Cukup relevan, tetap perlu validasi.' 
+    : 'Informasi masih terbatas, perlu verifikasi.';
+
   return (
-    <View style={{ gap: 6 }}>
-      <Text style={{ color: palette.text, fontWeight: '800', lineHeight: 20 }}>{ai.summary}</Text>
-      {sectionTitle('Penjelasan')}
-      <Text style={{ color: palette.text, lineHeight: 20 }}>{ai.legalExplanation}</Text>
+    <View className="gap-1.5">
+      {ai.fallbackUsed ? (
+        <View className="bg-danger/10 border border-danger/20 p-3 rounded-lg mb-3 flex-row items-start gap-2">
+          <Text className="text-danger text-base mt-0.5">⚠️</Text>
+          <Text className="text-danger text-xs font-semibold flex-1 leading-relaxed">
+            Mode simulasi aktif. Jawaban ini digunakan untuk pengujian karena AI provider belum aktif.
+          </Text>
+        </View>
+      ) : null}
+
+      <Text className="text-text text-[16px] font-bold leading-snug mb-1">{ai.summary}</Text>
+      
+      {ai.confidence && (
+        <View className="flex-row items-center flex-wrap gap-2 mb-2">
+          <Chip label={`Confidence: ${ai.confidence.toUpperCase()}`} tone={confidenceTone} />
+          <Text className="text-subtext text-xs italic">{confidenceHelper}</Text>
+        </View>
+      )}
+
+      <SectionTitle>Analisis Hukum</SectionTitle>
+      <Text className="text-text text-[15px] leading-relaxed">{ai.legalExplanation}</Text>
 
       {ai.suggestedSteps?.length ? (
         <>
-          {sectionTitle('Langkah disarankan')}
-          {ai.suggestedSteps.slice(0, 5).map((s, idx) => (
-            <Text key={idx} style={{ color: palette.text, lineHeight: 20 }}>
-              • {s}
-            </Text>
-          ))}
+          <SectionTitle>Langkah yang Disarankan</SectionTitle>
+          <View className="gap-2">
+            {ai.suggestedSteps.map((s, idx) => (
+              <View key={idx} className="flex-row items-start gap-2">
+                <View className="w-5 h-5 rounded-full bg-accent/10 items-center justify-center mt-0.5">
+                  <Text className="text-accent text-[10px] font-bold">{idx + 1}</Text>
+                </View>
+                <Text className="text-text text-[15px] leading-relaxed flex-1">{s}</Text>
+              </View>
+            ))}
+          </View>
         </>
       ) : null}
 
       {ai.requiredDocuments?.length ? (
         <>
-          {sectionTitle('Dokumen dibutuhkan')}
-          {ai.requiredDocuments.slice(0, 5).map((d, idx) => (
-            <Text key={idx} style={{ color: palette.text, lineHeight: 20 }}>
-              • {d}
-            </Text>
-          ))}
+          <SectionTitle>Dokumen yang Disiapkan</SectionTitle>
+          <View className="gap-1.5">
+            {ai.requiredDocuments.map((d, idx) => (
+              <View key={idx} className="flex-row items-start gap-2">
+                <Text className="text-subtext text-sm mt-0.5">•</Text>
+                <Text className="text-text text-[15px] leading-relaxed flex-1">{d}</Text>
+              </View>
+            ))}
+          </View>
         </>
       ) : null}
 
       {ai.risks?.length ? (
         <>
-          {sectionTitle('Risiko')}
-          {ai.risks.slice(0, 4).map((r, idx) => (
-            <Text key={idx} style={{ color: palette.text, lineHeight: 20 }}>
-              • {r}
-            </Text>
-          ))}
+          <SectionTitle>Potensi Risiko</SectionTitle>
+          <View className="bg-warning/10 border border-warning/20 p-3 rounded-xl gap-1.5">
+            {ai.risks.map((r, idx) => (
+              <View key={idx} className="flex-row items-start gap-2">
+                <Text className="text-warning text-sm mt-0.5">!</Text>
+                <Text className="text-text text-[14px] leading-relaxed flex-1">{r}</Text>
+              </View>
+            ))}
+          </View>
         </>
       ) : null}
 
-      {ai.whenNeedLawyer?.length ? (
-        <>
-          {sectionTitle('Kapan perlu lawyer')}
-          {ai.whenNeedLawyer.slice(0, 4).map((r: string, idx: number) => (
-            <Text key={idx} style={{ color: palette.text, lineHeight: 20 }}>
-              • {r}
-            </Text>
-          ))}
-        </>
-      ) : null}
-
-      <View style={{ marginTop: tokens.space.sm }}>
-        <Text style={{ color: palette.subtext, fontSize: 12, lineHeight: 16 }}>{ai.disclaimer}</Text>
+      <View className="mt-5 border-t border-divider/50 pt-3">
+        <Text className="text-subtext text-[11px] leading-relaxed italic">{ai.disclaimer}</Text>
       </View>
 
       {ai.escalation ? (
-        <View
-          style={{
-            marginTop: tokens.space.sm,
-            padding: tokens.space.md,
-            borderWidth: 1,
-            borderColor: palette.divider,
-            borderRadius: tokens.radius.md,
-            backgroundColor: `${palette.accent}10`,
-            gap: tokens.space.sm,
-          }}
-        >
-          <Text style={{ color: palette.text, fontWeight: '800' }}>Anda mungkin memerlukan bantuan lawyer</Text>
-          <Text style={{ color: palette.subtext, lineHeight: 20 }}>
-            Untuk kasus berisiko tinggi, pertimbangkan konsultasi langsung dengan lawyer.
+        <View className="mt-4 p-4 border border-accent/30 rounded-xl bg-accent/5 gap-3">
+          <View className="flex-row items-center gap-2">
+            <Text className="text-accent text-lg">⚖️</Text>
+            <Text className="text-text font-bold flex-1">Rekomendasi Konsultasi Lanjutan</Text>
+          </View>
+          <Text className="text-text text-[14px] leading-relaxed">
+            Untuk kasus ini, kami sangat menyarankan Anda berdiskusi langsung dengan pengacara profesional untuk mendapatkan perlindungan hukum yang pasti.
           </Text>
           <Button
-            title="Konsultasi Sekarang"
-            onPress={() => router.push({ pathname: '/(tabs)/lawyers', params: { source: 'ai_escalation' } })}
+            title="Temukan Pengacara"
+            variant="primary"
+            onPress={() => router.push({ pathname: '/(tabs)/account', params: { source: 'ai_escalation' } })}
+            className="mt-1"
           />
         </View>
       ) : null}

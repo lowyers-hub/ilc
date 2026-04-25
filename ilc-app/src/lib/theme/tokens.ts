@@ -21,6 +21,8 @@ export const tokens = {
       divider: 'rgba(18,19,22,0.08)',
       accent: '#1B5CFF',
       danger: '#D92D20',
+      success: '#12B76A',
+      warning: '#F79009',
     },
     dark: {
       bg: '#0B0C10',
@@ -30,6 +32,8 @@ export const tokens = {
       divider: 'rgba(242,244,248,0.10)',
       accent: '#6EA8FF',
       danger: '#FF6B6B',
+      success: '#32D583',
+      warning: '#FEC84B',
     },
   },
 };
