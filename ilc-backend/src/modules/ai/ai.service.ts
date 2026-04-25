@@ -1,4 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { createHash, randomUUID } from 'crypto';
 import OpenAI from 'openai';
 
@@ -54,7 +56,8 @@ export class AiService {
     private cache: RedisCacheService,
     private audits: AiAuditService,
     @InjectRepository(ChatSessionEntity) private sessions: Repository<ChatSessionEntity>,
-    @InjectRepository(ChatMessageEntity) private messages: Repository<ChatMessageEntity>
+    @InjectRepository(ChatMessageEntity) private messages: Repository<ChatMessageEntity>,
+    @InjectQueue('ai-evaluations') private aiEvaluationsQueue: Queue
   ) {}
 
   async getSessions(userId: string) {
@@ -67,7 +70,7 @@ export class AiService {
     const messages = await this.messages.find({ where: { sessionId }, order: { createdAt: 'ASC' } });
     
     // Backward compatibility mapping
-    return messages.map(msg => {
+    return messages.map((msg: ChatMessageEntity) => {
       if (msg.role === 'assistant') {
         if (msg.meta) {
           return {
@@ -113,7 +116,7 @@ export class AiService {
       
       chatHistory = recentMessages
         .reverse()
-        .map(m => ({ role: m.role, content: m.content }));
+        .map((m: ChatMessageEntity) => ({ role: m.role, content: m.content }));
     }
 
     // Fetch past sessions to build user memory context
@@ -124,10 +127,10 @@ export class AiService {
     });
     
     let userMemory = '';
-    const otherSessions = pastSessions.filter(s => s.id !== sessionId).slice(0, 3);
+    const otherSessions = pastSessions.filter((s: ChatSessionEntity) => s.id !== sessionId).slice(0, 3);
     if (otherSessions.length > 0) {
       // Optimized query: Fetch only the first and last message of each session to reduce memory footprint
-      const sessionIds = otherSessions.map(s => s.id);
+      const sessionIds = otherSessions.map((s: ChatSessionEntity) => s.id);
       
       const firstUserMessages = await this.messages.createQueryBuilder('msg')
         .where('msg.sessionId IN (:...sessionIds)', { sessionIds })
@@ -153,8 +156,8 @@ export class AiService {
       };
 
       for (const s of otherSessions) {
-        const firstUserMsg = firstUserMessages.find(m => m.sessionId === s.id);
-        const lastAsstMsg = lastAssistantMessages.find(m => m.sessionId === s.id);
+        const firstUserMsg = firstUserMessages.find((m: ChatMessageEntity) => m.sessionId === s.id);
+        const lastAsstMsg = lastAssistantMessages.find((m: ChatMessageEntity) => m.sessionId === s.id);
 
         if (firstUserMsg) {
           const issue = firstUserMsg.content.slice(0, 100).replace(/\n/g, ' ');
@@ -242,6 +245,13 @@ export class AiService {
         sanitizedOutput: out, // already sanitized
         finalResponse: out,
       });
+      
+      // Dispatch background evaluation job
+      await this.aiEvaluationsQueue.add('evaluate', { requestId }, {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 }
+      });
+      
       return out;
     }
 
@@ -319,6 +329,12 @@ export class AiService {
       rawModelOutput: gen.raw,
       sanitizedOutput: sanitized,
       finalResponse: out,
+    });
+
+    // Dispatch background evaluation job
+    await this.aiEvaluationsQueue.add('evaluate', { requestId }, {
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2000 }
     });
 
     return out;
