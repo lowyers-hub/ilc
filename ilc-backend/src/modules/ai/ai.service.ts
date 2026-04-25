@@ -214,8 +214,6 @@ export class AiService {
 
     const specialist = SPECIALISTS[detailed.category];
     const clarifyingQuestions = pickClarifyingQuestions(args.message, specialist.clarifyingFacts, 4);
-    const escalationMeta = computeEscalation(args.message, detailed);
-
     const gen = await this.generateLegalChatV1({
       message: args.message,
       history: chatHistory,
@@ -226,8 +224,18 @@ export class AiService {
       clarifyingQuestions,
     });
 
+    // Compute regex-based fallback escalation
+    const fallbackEscalationMeta = computeEscalation(args.message, detailed);
+
     // Enforce schema + grounding constraints
     const validated = validateLegalChatResponse(gen.parsed, retrievedChunkIds);
+    
+    // Safety Fallback: If LLM missed high risk that regex caught, override it
+    if (!validated.escalation && fallbackEscalationMeta.escalation) {
+      validated.escalation = true;
+      validated.escalationMeta = fallbackEscalationMeta;
+    }
+
     const confidence: LegalChatResponse['confidence'] = deriveConfidence({
       hasContext,
       clarifyingQuestionsCount: clarifyingQuestions.length,
@@ -241,8 +249,6 @@ export class AiService {
       sessionId,
       confidence,
       disclaimer: 'Ini adalah informasi umum, bukan nasihat hukum final.',
-      escalation: escalationMeta.escalation,
-      escalationMeta,
       requestId,
       promptVersion,
       model: gen.model,
@@ -485,7 +491,7 @@ function computeEscalation(message: string, d: ReturnType<typeof classifyDetaile
   return { escalation, reason, recommendedSpecialization };
 }
 
-function validateLegalChatResponse(obj: any, retrievedChunkIds: string[]): Omit<LegalChatResponse, 'requestId' | 'promptVersion' | 'model' | 'latencyMs' | 'fallbackUsed' | 'cacheHit' | 'retrievedChunkIds' | 'escalationMeta'> {
+function validateLegalChatResponse(obj: any, retrievedChunkIds: string[]): Omit<LegalChatResponse, 'requestId' | 'promptVersion' | 'model' | 'latencyMs' | 'fallbackUsed' | 'cacheHit' | 'retrievedChunkIds' | 'sessionId'> {
   const requiredString = (k: string) => typeof obj?.[k] === 'string' && obj[k].trim().length > 0;
   const requiredArray = (k: string) => Array.isArray(obj?.[k]);
 
@@ -522,12 +528,17 @@ function validateLegalChatResponse(obj: any, retrievedChunkIds: string[]): Omit<
     confidence: obj.confidence,
     citations,
     disclaimer: obj.disclaimer,
-    escalation: Boolean(obj.escalation ?? false),
+    escalation: Boolean(obj.escalationMeta?.escalation ?? false),
+    escalationMeta: {
+      escalation: Boolean(obj.escalationMeta?.escalation ?? false),
+      reason: String(obj.escalationMeta?.reason ?? 'Tidak ada'),
+      recommendedSpecialization: obj.escalationMeta?.recommendedSpecialization ?? 'general',
+    }
   };
 }
 
 function sanitizeLegalChat(
-  out: Omit<LegalChatResponse, 'requestId' | 'promptVersion' | 'model' | 'latencyMs' | 'fallbackUsed' | 'cacheHit' | 'retrievedChunkIds' | 'escalationMeta'>,
+  out: Omit<LegalChatResponse, 'requestId' | 'promptVersion' | 'model' | 'latencyMs' | 'fallbackUsed' | 'cacheHit' | 'retrievedChunkIds' | 'sessionId'>,
   safety: SafetySanitizerService,
   hasContext: boolean
 ) {
@@ -575,5 +586,10 @@ function fallbackLegalChat(args: {
     })),
     disclaimer: 'Ini adalah informasi umum, bukan nasihat hukum final.',
     escalation: false,
+    escalationMeta: {
+      escalation: false,
+      reason: 'Fallback logic used',
+      recommendedSpecialization: 'general' as const
+    }
   };
 }
