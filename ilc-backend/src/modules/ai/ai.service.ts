@@ -231,14 +231,20 @@ export class AiService {
     // Predictive Layer: Detect ambiguity
     const isAmbiguous = analyzeAmbiguity(args.message);
 
-    const retrieved = await this.retrieval.retrieve({ 
-      userId, 
-      query: args.message, 
-      topK: 10, 
-      riskLevel: detailed.riskLevel,
-      categories: detailed.categories,
-      isAmbiguous
-    });
+    let retrieved: any[] = [];
+    try {
+      retrieved = await this.retrieval.retrieve({
+        userId,
+        query: args.message,
+        topK: 10,
+        riskLevel: detailed.riskLevel,
+        categories: detailed.categories,
+        isAmbiguous
+      });
+    } catch (e: any) {
+      this.logger.warn(`Retrieval failed: ${e.message}. Proceeding without context.`);
+    }
+    
     const retrievedChunkIds = retrieved.map((c) => c.id);
     const hasContext = retrieved.length > 0;
 
@@ -507,14 +513,26 @@ export class AiService {
       `RETRIEVED_CHUNK_IDS:\n${args.retrieved.map((r) => r.id).join(', ') || '(none)'}`,
     ].join('\n\n');
 
-    const res = await client.chat.completions.create({
-      model,
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: prompt.system },
-        { role: 'user', content: userContent },
-      ],
-    });
+    let res: any;
+    try {
+      res = await client.chat.completions.create({
+        model,
+        temperature: 0.2,
+        messages: [
+          { role: 'system', content: prompt.system },
+          { role: 'user', content: userContent },
+        ],
+      });
+    } catch (e: any) {
+      this.logger.error(`OpenAI Chat completion failed: ${e.message}`);
+      return {
+        raw: null,
+        model: null,
+        usage: null,
+        fallbackUsed: true,
+        parsed: fallbackLegalChat({ ...args, confidence: args.confidence }),
+      };
+    }
 
     const raw = res.choices?.[0]?.message?.content ?? '';
     const parsed = parseJsonObject(raw);
