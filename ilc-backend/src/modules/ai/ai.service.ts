@@ -85,6 +85,11 @@ export class AiService {
     });
   }
 
+  async getUserMemory(userId: string) {
+    const cachedMemory = await this.cache.getJson(`ai:memory:${userId}`);
+    return cachedMemory || { userId, lastUpdated: new Date().toISOString(), pastIssues: [] };
+  }
+
   async classify(message: string): Promise<Classification> {
     const d = classifyDetailed(message);
     return { category: d.categoryLabel, intent: d.intent, riskLevel: d.riskLevel };

@@ -32,6 +32,11 @@ export class AiController {
     return this.ai.getSessions(u.userId);
   }
 
+  @Get('memory')
+  async getMemory(@CurrentUser() u: { userId: string }) {
+    return this.ai.getUserMemory(u.userId);
+  }
+
   @Get('chat/:sessionId/messages')
   async getMessages(@CurrentUser() u: { userId: string }, @Param('sessionId') sessionId: string) {
     try {
