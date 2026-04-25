@@ -101,11 +101,31 @@ Respond strictly in JSON format:
         await this.cache.del(audit.cacheKey);
       }
 
-      // 5. Chunk Performance Tracking: Penalize chunks involved in hallucinations
+      // 5. Chunk Performance Tracking: Penalize chunks involved in hallucinations with decay
       if (evaluationMetrics.hallucinationScore > 0 && retrievedChunks.length > 0) {
+        const now = Date.now();
         for (const chunkId of retrievedChunks) {
-          // Increment penalty score for the chunk (acts as a negative weight in future retrievals)
-          await this.cache.incr(`ai:chunk:penalty:${chunkId}`);
+          const penaltyKey = `ai:chunk:penalty:${chunkId}`;
+          const penaltyStr = await this.cache.get(penaltyKey);
+          
+          let currentScore = 0;
+          if (penaltyStr) {
+            try {
+              const data = JSON.parse(penaltyStr);
+              // Calculate decay: half-life of 7 days
+              const daysPassed = (now - (data.lastUpdated || now)) / (1000 * 60 * 60 * 24);
+              currentScore = data.score * Math.pow(0.5, daysPassed);
+            } catch (e) {
+              // Fallback if old plain-string format exists
+              currentScore = parseInt(penaltyStr, 10) || 0;
+            }
+          }
+          
+          // Add 1 penalty point and store
+          await this.cache.setJson(penaltyKey, {
+            score: currentScore + 1,
+            lastUpdated: now
+          }, 86400 * 30); // 30 day absolute TTL to prevent infinite storage
         }
       }
 

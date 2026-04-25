@@ -66,13 +66,30 @@ export class RetrievalService {
 
     if (rows.length === 0) return [];
 
-    // Apply chunk performance tracking penalties
+    // Apply chunk performance tracking penalties with time-based decay
+    const now = Date.now();
     for (const r of rows) {
       const penaltyStr = await this.cache.get(`ai:chunk:penalty:${r.id}`);
       if (penaltyStr) {
-        const penaltyCount = parseInt(penaltyStr, 10);
-        // Reduce similarity by 5% per penalty (e.g., 2 penalties = 10% reduction)
-        r.similarity = Math.max(0, Number(r.similarity) - (penaltyCount * 0.05));
+        try {
+          const data = JSON.parse(penaltyStr);
+          const daysPassed = (now - (data.lastUpdated || now)) / (1000 * 60 * 60 * 24);
+          
+          // Exponential decay: half-life of 7 days
+          const effectivePenalty = data.score * Math.pow(0.5, daysPassed);
+          
+          if (effectivePenalty < 0.1) {
+            // Clean up fully decayed penalties to save cache space
+            await this.cache.del(`ai:chunk:penalty:${r.id}`);
+          } else {
+            // Reduce similarity by 5% per effective penalty score
+            r.similarity = Math.max(0, Number(r.similarity) - (effectivePenalty * 0.05));
+          }
+        } catch (e) {
+          // Fallback for legacy plain-string format
+          const penaltyCount = parseInt(penaltyStr, 10) || 0;
+          r.similarity = Math.max(0, Number(r.similarity) - (penaltyCount * 0.05));
+        }
       }
     }
 
