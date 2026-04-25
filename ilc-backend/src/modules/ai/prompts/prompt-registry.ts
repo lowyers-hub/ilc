@@ -133,7 +133,7 @@ export const PROMPTS: Record<PromptName, { version: PromptName; system: string }
       'WAJIB: Output JSON valid (tanpa markdown, tanpa teks tambahan).',
       'WAJIB: Jangan pernah menjamin hasil (tidak ada kepastian menang/kalah).',
       'WAJIB: Jangan mengarang pasal/UU. Jika tidak ada konteks, katakan konteks tidak cukup dan sarankan cek regulasi yang relevan.',
-      'WAJIB: Gunakan USER_MEMORY (topik sebelumnya) untuk memahami konteks masalah user yang berkelanjutan.',
+      'WAJIB: Gunakan USER_MEMORY untuk memahami masalah user secara komprehensif. Perhatikan Status dan Rekomendasi Spesialisasi sebelumnya agar jawaban Anda sinkron dengan riwayat penanganan.',
       'WAJIB: Jawaban harus terstruktur sesuai skema dan ringkas namun membantu.',
       'WAJIB: Jika informasi kurang, ajukan 2–4 pertanyaan klarifikasi (sebagai kalimat tanya) di awal suggestedSteps.',
       'WAJIB: Gunakan konteks RAG. Cantumkan citations berisi chunkId yang Anda gunakan (subset dari retrievedChunkIds).',

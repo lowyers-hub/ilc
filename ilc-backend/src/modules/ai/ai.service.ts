@@ -128,15 +128,23 @@ export class AiService {
     if (otherSessions.length > 0) {
       const pastMessages = await this.messages.createQueryBuilder('msg')
         .where('msg.sessionId IN (:...sessionIds)', { sessionIds: otherSessions.map(s => s.id) })
-        .andWhere('msg.role = :role', { role: 'user' })
         .orderBy('msg.createdAt', 'ASC')
         .getMany();
         
       const memoryLines: string[] = [];
       for (const s of otherSessions) {
-        const firstMsg = pastMessages.find(m => m.sessionId === s.id);
-        if (firstMsg) {
-          memoryLines.push(`- Topik sebelumnya: "${firstMsg.content.slice(0, 150)}..."`);
+        const sessionMsgs = pastMessages.filter(m => m.sessionId === s.id);
+        const firstUserMsg = sessionMsgs.find(m => m.role === 'user');
+        const lastAsstMsg = [...sessionMsgs].reverse().find(m => m.role === 'assistant');
+
+        if (firstUserMsg && lastAsstMsg && lastAsstMsg.meta) {
+          const issue = firstUserMsg.content.slice(0, 100).replace(/\n/g, ' ');
+          const isEscalated = lastAsstMsg.meta.escalation ? 'Eskalasi ke Pengacara' : 'Selesai di AI';
+          const recommendation = lastAsstMsg.meta.escalationMeta?.recommendedSpecialization || 'Umum';
+          
+          memoryLines.push(`- Isu: "${issue}..." | Status: ${isEscalated} | Rekomendasi Spesialisasi: ${recommendation}`);
+        } else if (firstUserMsg) {
+          memoryLines.push(`- Isu: "${firstUserMsg.content.slice(0, 100).replace(/\n/g, ' ')}..." | Status: Belum selesai`);
         }
       }
       if (memoryLines.length > 0) {
