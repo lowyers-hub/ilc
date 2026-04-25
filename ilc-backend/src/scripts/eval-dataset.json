@@ -1,0 +1,42 @@
+[
+  {
+    "id": "tc-emp-001",
+    "category": "employment",
+    "userMessage": "Saya baru saja dipecat sepihak tanpa ada Surat Peringatan (SP) sebelumnya. Saya sudah bekerja 3 tahun sebagai karyawan tetap. Apakah saya berhak menuntut pesangon?",
+    "expectedRiskLevel": "medium",
+    "expectedEscalation": false,
+    "groundTruthSummary": "Pekerja berhak mendapatkan pesangon, uang penghargaan masa kerja, dan uang penggantian hak sesuai ketentuan UU Cipta Kerja. PHK tanpa SP dapat diperdebatkan keabsahannya. Disarankan untuk meminta perundingan bipartit dengan perusahaan."
+  },
+  {
+    "id": "tc-crim-001",
+    "category": "criminal",
+    "userMessage": "Saya mendapat surat panggilan dari kantor polisi atas tuduhan penggelapan uang perusahaan sebesar 500 juta. Saya harus datang besok. Apa yang harus saya lakukan?",
+    "expectedRiskLevel": "high",
+    "expectedEscalation": true,
+    "groundTruthSummary": "Ini adalah masalah pidana dengan risiko penahanan (Pasal 374 KUHP). Sangat disarankan untuk segera didampingi oleh pengacara pidana sebelum menghadiri pemeriksaan. Jangan menandatangani BAP tanpa didampingi penasihat hukum."
+  },
+  {
+    "id": "tc-con-001",
+    "category": "consumer",
+    "userMessage": "Saya beli HP di marketplace, tapi yang datang barang palsu. Penjual menolak refund dan memblokir saya. Nilainya 3 juta.",
+    "expectedRiskLevel": "low",
+    "expectedEscalation": false,
+    "groundTruthSummary": "Pembeli dilindungi oleh UU Perlindungan Konsumen. Langkah pertama adalah melaporkan transaksi ke pihak marketplace melalui pusat resolusi untuk menahan dana, lalu kumpulkan bukti unboxing."
+  },
+  {
+    "id": "tc-debt-001",
+    "category": "debt",
+    "userMessage": "Klien saya belum membayar invoice sebesar 200 juta yang sudah jatuh tempo 3 bulan lalu. Saya sudah chat WA tapi tidak dibalas.",
+    "expectedRiskLevel": "medium",
+    "expectedEscalation": true,
+    "groundTruthSummary": "Klien telah melakukan wanprestasi. Langkah hukum pertama adalah mengirimkan Surat Peringatan (Somasi) secara resmi. Mengingat nilainya cukup besar (200 juta), eskalasi ke pengacara disarankan jika somasi diabaikan."
+  },
+  {
+    "id": "tc-fam-001",
+    "category": "family",
+    "userMessage": "Suami saya sering memukul saya jika sedang marah, dan kemarin dia mengancam akan membawa pergi anak kami yang masih balita. Saya takut pulang.",
+    "expectedRiskLevel": "high",
+    "expectedEscalation": true,
+    "groundTruthSummary": "Ini adalah kasus KDRT dengan risiko keselamatan fisik. Korban harus segera mengamankan diri, melapor ke pihak kepolisian (Unit PPA), dan melakukan visum. Sangat disarankan mencari pendampingan pengacara dan lembaga perlindungan perempuan."
+  }
+]
