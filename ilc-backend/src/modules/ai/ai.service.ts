@@ -242,7 +242,7 @@ export class AiService {
 
     // Predictive Layer: Detect low knowledge coverage
     const maxRetrievalScore = retrieved.length > 0 ? Math.max(...retrieved.map(c => c.score)) : 0;
-    const lowCoverage = retrieved.length === 0 || maxRetrievalScore < 0.65;
+    const lowCoverage = retrieved.length === 0 || maxRetrievalScore < 0.55; // Lowered from 0.65 to avoid false negatives
 
     // Fetch health state to adapt AI behavior and tone
     let minCorrectnessTrend = 1.0;
@@ -254,12 +254,12 @@ export class AiService {
     }
     const correctnessTrend = minCorrectnessTrend;
     let adaptiveTone = correctnessTrend < 0.85 
-      ? 'CONSERVATIVE_MODE: Be extremely cautious. Emphasize that you are not a human lawyer. Do not make assumptions beyond the text.' 
-      : 'CONFIDENT_MODE: Be helpful and direct based on the context.';
+      ? 'CONSERVATIVE_MODE: Be cautious. Do not make assumptions beyond the text, but STILL provide actionable general guidance. Do not refuse to answer if general information can help.' 
+      : 'CONFIDENT_MODE: Be helpful, direct, and authoritative based on the context.';
 
     // Predictive Layer: Preemptively adjust tone to prevent hallucination
     if (lowCoverage) {
-      adaptiveTone += '\nPREDICTIVE_WARNING (LOW_COVERAGE): The retrieved context is weak or missing. DO NOT invent laws or facts. State clearly that your knowledge is limited here.';
+      adaptiveTone += '\nPREDICTIVE_WARNING (LOW_COVERAGE): The retrieved context is weak or missing. DO NOT invent specific laws, but DO provide helpful general principles and common practices.';
     }
     if (isAmbiguous) {
       adaptiveTone += '\nPREDICTIVE_WARNING (HIGH_AMBIGUITY): The user query is vague or lacks specific facts. Provide general guidance, ask clarifying questions, and DO NOT make assumptions.';
@@ -467,6 +467,7 @@ export class AiService {
       `PROMPT_VERSION=${prompt.version}`,
       `ADAPTIVE_TONE=${args.adaptiveTone}`,
       `CATEGORIES=${args.specialist.categories.join(', ')}`,
+      args.specialist.categories.length > 1 ? 'MULTI_CATEGORY_RESOLUTION: Multiple legal domains detected. Address each domain clearly. Prioritize high-risk aspects (e.g., Criminal, Family) over civil/contract aspects.' : '',
       `RISK_LEVEL=${args.classification.riskLevel}`,
       `USER_MEMORY:\n${args.userMemory || '(none)'}`,
       ragBlock,

@@ -107,12 +107,14 @@ export class RetrievalService {
     
     const isHallucinating = maxHallucinationRate > 0.05;
 
-    // Smooth scaling strictness factor (1.0 to 1.5) based on hallucination rate
-    let strictnessFactor = 1.0 + Math.min(maxHallucinationRate * 2, 0.5);
+    // Smooth scaling strictness factor (1.0 to 1.3) based on hallucination rate
+    // Capped at 0.3 to prevent over-conservative collapse where 0 chunks are returned
+    let strictnessFactor = 1.0 + Math.min(maxHallucinationRate * 1.5, 0.3);
 
     // Predictive Layer: Increase strictness if query is highly ambiguous
+    // Softened from 0.2 to 0.1 to avoid false negatives on vague but valid queries
     if (args.isAmbiguous) {
-      strictnessFactor += 0.2;
+      strictnessFactor += 0.1;
     }
 
     // Dynamic base threshold
