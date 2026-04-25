@@ -57,7 +57,7 @@ export class DocumentsService {
     if (doc.status !== 'ready') return { status: 'processing' as const, result: null };
 
     const parts = await this.chunks.find({ where: { documentId }, order: { chunkIndex: 'ASC' } });
-    const text = parts.map((p) => p.content).join('\n\n').slice(0, 20_000);
+    const text = parts.map((p: DocumentChunkEntity) => p.content).join('\n\n').slice(0, 20_000);
     return { status: 'ready' as const, result: { docId: documentId, text } };
   }
 

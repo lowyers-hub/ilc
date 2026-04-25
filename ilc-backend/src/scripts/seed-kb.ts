@@ -12,7 +12,7 @@ import { EmbeddingService } from '@/modules/rag/services/embedding.service';
 
 async function main() {
   const kbDir = path.join(process.cwd(), 'resources', 'kb');
-  const files = readdirSync(kbDir).filter((f) => f.endsWith('.md'));
+  const files = readdirSync(kbDir).filter((f: string) => f.endsWith('.md'));
   if (files.length === 0) throw new Error('KB kosong: resources/kb/*.md tidak ditemukan');
 
   await AppDataSource.initialize();

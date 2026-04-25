@@ -44,7 +44,7 @@ export class RetrievalService {
       .where('d.userId = :uid', { uid: args.userId })
       .orWhere('d.userId = :kb', { kb: KB_USER_ID })
       .getRawMany<{ id: string }>();
-    const docIds = docRows.map((d) => d.id);
+    const docIds = docRows.map((d: { id: string }) => d.id);
     if (docIds.length === 0) return [];
 
     const qVector = `[${qEmb.join(',')}]`;
@@ -69,9 +69,26 @@ export class RetrievalService {
     const candidates = rows.filter((r: any) => Number(r.similarity) >= 0.40);
     if (candidates.length === 0) return [];
 
+    // 3. Initial Filtering & Conditional Re-ranking
+    // Determine query complexity to balance cost vs accuracy dynamically
+    const wordCount = args.query.trim().split(/\s+/).length;
+    const isShortSimple = wordCount <= 5 && !args.query.includes('?');
+    const isComplex = wordCount >= 15 || (args.query.match(/\?/g) || []).length > 1; // Long queries or multiple questions
+
+    let shouldRerank = true;
+    if (args.riskLevel === 'high') {
+      shouldRerank = true; // Always rerank high-risk legal queries
+    } else if (isComplex) {
+      shouldRerank = true; // Force rerank for complex/ambiguous queries
+    } else if (isShortSimple) {
+      shouldRerank = false; // Skip rerank for short/simple queries
+    } else if (args.riskLevel === 'low') {
+      shouldRerank = false; // Skip rerank for low-risk, average-length queries
+    }
+
     let scoredChunks: any[] = [];
-    if (args.riskLevel === 'low') {
-      // Avoid reranking for low-risk queries to save LLM cost and latency
+    if (!shouldRerank) {
+      // Avoid reranking for simple/low-risk queries to save LLM cost and latency
       scoredChunks = candidates.map((c: any) => ({ ...c, score: Number(c.similarity) }));
     } else {
       // Use LLM reranker ONLY for the absolute top candidates to reduce token cost
@@ -84,7 +101,7 @@ export class RetrievalService {
     }
 
     // 4. Confidence Scoring & Filtering
-    const threshold = args.riskLevel === 'low' ? 0.45 : 0.60; // Lower threshold if we didn't rerank
+    const threshold = !shouldRerank ? 0.45 : 0.60; // Lower threshold if we didn't rerank
     
     return scoredChunks
       .filter((r: any) => r.score >= threshold)
