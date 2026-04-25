@@ -1,6 +1,6 @@
 import { FlashList } from '@shopify/flash-list';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { ActivityIndicator, Text, TextInput, View } from 'react-native';
 
 import { Button } from '@/src/components/Button';
@@ -77,8 +77,14 @@ export default function ChatThreadScreen() {
         data={list}
         inverted
         keyExtractor={(m) => m.id}
-        contentContainerStyle={{ paddingBottom: 120 }}
-        renderItem={({ item }) => <MessageBubble msg={item} />}
+        contentContainerStyle={{ paddingBottom: 160 }}
+        renderItem={({ item, index }) => (
+          <MessageBubble 
+            msg={item} 
+            isLatest={index === 0} 
+            onSuggestionPress={(text) => setDraft(text)} 
+          />
+        )}
         ListFooterComponent={
           sendMutation.isPending ? (
             <View className="p-4 items-start mb-4">
@@ -143,7 +149,7 @@ export default function ChatThreadScreen() {
   );
 }
 
-function MessageBubble({ msg }: { msg: ChatMessage }) {
+function MessageBubble({ msg, isLatest, onSuggestionPress }: { msg: ChatMessage, isLatest: boolean, onSuggestionPress: (text: string) => void }) {
   const isUser = msg.role === 'user';
 
   return (
@@ -156,7 +162,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
         }`}
       >
         {msg.structured ? (
-          <StructuredAI msg={msg} />
+          <StructuredAI msg={msg} isLatest={isLatest} onSuggestionPress={onSuggestionPress} />
         ) : (
           <Text className="text-text text-[15px] leading-relaxed">{msg.content}</Text>
         )}
@@ -176,7 +182,7 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   );
 }
 
-function StructuredAI({ msg }: { msg: ChatMessage }) {
+function StructuredAI({ msg, isLatest, onSuggestionPress }: { msg: ChatMessage, isLatest: boolean, onSuggestionPress: (text: string) => void }) {
   const ai = msg.structured!;
 
   const SectionTitle = ({ children }: { children: string }) => (
@@ -191,6 +197,45 @@ function StructuredAI({ msg }: { msg: ChatMessage }) {
     : ai.confidence === 'medium' 
     ? 'Cukup relevan, tetap perlu validasi.' 
     : 'Informasi masih terbatas, perlu verifikasi.';
+
+  const dynamicFollowUps = useMemo(() => {
+    if (!ai.suggestedSteps?.length) return [
+      "Bisakah Anda menjelaskan aspek hukum dari situasi ini secara lebih detail?",
+      "Bisakah Anda membuatkan draf surat terkait masalah ini?"
+    ];
+
+    const contextKeywords = ai.summary.toLowerCase();
+    
+    if (contextKeywords.includes("phk") || contextKeywords.includes("pesangon") || contextKeywords.includes("karyawan")) {
+      return [
+        "Bagaimana cara menghitung pesangon yang seharusnya saya dapat?",
+        "Apakah ada dasar hukum spesifik terkait PHK ini?",
+        "Bisakah Anda buatkan draf surat somasi ke perusahaan?"
+      ];
+    }
+
+    if (contextKeywords.includes("kontrak") || contextKeywords.includes("perjanjian")) {
+      return [
+        "Apa pasal yang paling berisiko dari kontrak ini?",
+        "Bagaimana cara membatalkan perjanjian ini secara sah?",
+        "Bisakah buatkan draf addendum kontrak?"
+      ];
+    }
+
+    if (contextKeywords.includes("utang") || contextKeywords.includes("pinjaman")) {
+      return [
+        "Apa langkah hukum pertama jika debitur kabur?",
+        "Bisakah Anda buatkan draf surat peringatan (somasi) utang?",
+        "Apakah kasus ini bisa masuk ke ranah pidana?"
+      ];
+    }
+
+    return [
+      `Bisakah Anda jelaskan lebih rinci mengenai langkah pertama?`,
+      "Apa dasar hukum (Undang-Undang) yang mengatur hal ini?",
+      "Bisakah Anda membuatkan draf surat/dokumen yang dibutuhkan?"
+    ];
+  }, [ai.summary, ai.suggestedSteps]);
 
   return (
     <View className="gap-1.5">
@@ -220,11 +265,14 @@ function StructuredAI({ msg }: { msg: ChatMessage }) {
           <SectionTitle>Langkah yang Disarankan</SectionTitle>
           <View className="gap-2">
             {ai.suggestedSteps.map((s, idx) => (
-              <View key={idx} className="flex-row items-start gap-2">
-                <View className="w-5 h-5 rounded-full bg-accent/10 items-center justify-center mt-0.5">
-                  <Text className="text-accent text-[10px] font-bold">{idx + 1}</Text>
+              <View 
+                key={idx} 
+                className={`flex-row items-start gap-2 p-2 rounded-lg ${idx === 0 ? 'bg-accent/5 border border-accent/20' : ''}`}
+              >
+                <View className={`w-5 h-5 rounded-full items-center justify-center mt-0.5 ${idx === 0 ? 'bg-accent text-white' : 'bg-accent/10'}`}>
+                  <Text className={`text-[10px] font-bold ${idx === 0 ? 'text-white' : 'text-accent'}`}>{idx + 1}</Text>
                 </View>
-                <Text className="text-text text-[15px] leading-relaxed flex-1">{s}</Text>
+                <Text className={`text-[15px] leading-relaxed flex-1 ${idx === 0 ? 'text-text font-medium' : 'text-text'}`}>{s}</Text>
               </View>
             ))}
           </View>
@@ -278,6 +326,23 @@ function StructuredAI({ msg }: { msg: ChatMessage }) {
             onPress={() => router.push({ pathname: '/(tabs)/account', params: { source: 'ai_escalation' } })}
             className="mt-1"
           />
+        </View>
+      ) : null}
+
+      {isLatest && !ai.escalation ? (
+        <View className="mt-5 border-t border-divider/50 pt-4">
+          <Text className="text-text font-semibold mb-3">Saran pertanyaan lanjutan:</Text>
+          <View className="gap-2">
+            {dynamicFollowUps.map((question, idx) => (
+              <Button 
+                key={idx}
+                title={question} 
+                variant="secondary" 
+                onPress={() => onSuggestionPress(question)} 
+                className="justify-start items-start text-left"
+              />
+            ))}
+          </View>
         </View>
       ) : null}
     </View>
