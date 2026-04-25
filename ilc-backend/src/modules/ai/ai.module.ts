@@ -13,6 +13,7 @@ import { SafetySanitizerService } from './services/safety-sanitizer.service';
 import { RedisCacheService } from '@/common/cache/redis-cache.service';
 import { AiAuditService } from './services/ai-audit.service';
 import { AiEvaluationProcessor } from './workers/ai-evaluation.processor';
+import { AiMonitoringService } from './services/ai-monitoring.service';
 
 @Module({
   imports: [
@@ -24,7 +25,7 @@ import { AiEvaluationProcessor } from './workers/ai-evaluation.processor';
     }),
   ],
   controllers: [AiController],
-  providers: [AiService, SafetySanitizerService, RedisCacheService, AiAuditService, AiEvaluationProcessor],
+  providers: [AiService, SafetySanitizerService, RedisCacheService, AiAuditService, AiEvaluationProcessor, AiMonitoringService],
   exports: [AiAuditService],
 })
 export class AiModule {}
