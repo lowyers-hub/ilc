@@ -26,10 +26,10 @@ export class RetrievalService {
   ) {}
 
   // Replace with pgvector / Pinecone / Weaviate and enforce ACL via userId filters.
-  async retrieve(args: { userId: string; query: string; topK?: number }): Promise<RetrievedChunk[]> {
+  async retrieve(args: { userId: string; query: string; topK?: number; riskLevel?: 'low' | 'medium' | 'high' }): Promise<RetrievedChunk[]> {
     const t0 = Date.now();
     const finalTopK = args.topK ?? 5;
-    const overfetchK = finalTopK * 3; // Fetch more for re-ranking
+    const overfetchK = finalTopK * 2; // Reduced from 3x to 2x to save DB cost
 
     // 1. Query Rewriting (Legal Synonyms & Expansion)
     const rewrittenQuery = await this.rewriteQuery(args.query);
@@ -64,16 +64,32 @@ export class RetrievalService {
 
     if (rows.length === 0) return [];
 
-    // 3. Re-ranking (Cross-Encoder / LLM scoring)
-    const reranked = await this.rerankChunks(rewrittenQuery, rows);
+    // 3. Initial Filtering & Conditional Re-ranking
+    // Use vector similarity for initial filtering to drop obvious noise
+    const candidates = rows.filter((r: any) => Number(r.similarity) >= 0.40);
+    if (candidates.length === 0) return [];
+
+    let scoredChunks: any[] = [];
+    if (args.riskLevel === 'low') {
+      // Avoid reranking for low-risk queries to save LLM cost and latency
+      scoredChunks = candidates.map((c: any) => ({ ...c, score: Number(c.similarity) }));
+    } else {
+      // Use LLM reranker ONLY for the absolute top candidates to reduce token cost
+      const candidatesToRerank = candidates.slice(0, finalTopK + 2);
+      scoredChunks = await this.rerankChunks(rewrittenQuery, candidatesToRerank);
+      
+      // Append the un-reranked chunks with their raw similarity score (lowered slightly to ensure they stay at bottom)
+      const remaining = candidates.slice(finalTopK + 2).map((c: any) => ({ ...c, score: Number(c.similarity) * 0.8 }));
+      scoredChunks = [...scoredChunks, ...remaining].sort((a, b) => b.score - a.score);
+    }
 
     // 4. Confidence Scoring & Filtering
-    const threshold = 0.60; // Minimum acceptable relevance
+    const threshold = args.riskLevel === 'low' ? 0.45 : 0.60; // Lower threshold if we didn't rerank
     
-    return reranked
-      .filter((r) => r.score >= threshold)
+    return scoredChunks
+      .filter((r: any) => r.score >= threshold)
       .slice(0, finalTopK)
-      .map((r) => {
+      .map((r: any) => {
         let confidence: 'high' | 'medium' | 'low' = 'low';
         if (r.score >= 0.85) confidence = 'high';
         else if (r.score >= 0.70) confidence = 'medium';

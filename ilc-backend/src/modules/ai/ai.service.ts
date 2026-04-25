@@ -193,7 +193,7 @@ export class AiService {
     const detailed = classifyDetailed(args.message);
     const classification = { category: detailed.categoryLabel, intent: detailed.intent, riskLevel: detailed.riskLevel };
 
-    const retrieved = await this.retrieval.retrieve({ userId, query: args.message, topK: 10 });
+    const retrieved = await this.retrieval.retrieve({ userId, query: args.message, topK: 10, riskLevel: detailed.riskLevel });
     const retrievedChunkIds = retrieved.map((c) => c.id);
     const hasContext = retrieved.length > 0;
 
