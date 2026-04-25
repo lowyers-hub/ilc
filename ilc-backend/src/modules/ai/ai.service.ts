@@ -226,9 +226,22 @@ export class AiService {
       meta: null,
     }));
 
-    const retrieved = await this.retrieval.retrieve({ userId, query: args.message, topK: 10, riskLevel: detailed.riskLevel });
+    const retrieved = await this.retrieval.retrieve({ 
+      userId, 
+      query: args.message, 
+      topK: 10, 
+      riskLevel: detailed.riskLevel,
+      category: detailed.categoryLabel 
+    });
     const retrievedChunkIds = retrieved.map((c) => c.id);
     const hasContext = retrieved.length > 0;
+
+    // Fetch health state to adapt AI behavior and tone
+    const health = await this.cache.getJson<{ correctnessTrend: number }>(`ai:health:metrics:${detailed.categoryLabel}`);
+    const correctnessTrend = health?.correctnessTrend || 1.0;
+    const adaptiveTone = correctnessTrend < 0.85 
+      ? 'CONSERVATIVE_MODE: Be extremely cautious. Emphasize that you are not a human lawyer. Do not make assumptions beyond the text.' 
+      : 'CONFIDENT_MODE: Be helpful and direct based on the context.';
 
     // Content cache (for UX/perf). We still generate a new requestId and audit record per request.
     const historyHash = chatHistory.length > 0 ? sha1(JSON.stringify(chatHistory)) : 'empty';
@@ -300,6 +313,7 @@ export class AiService {
       specialist,
       classification,
       clarifyingQuestions,
+      adaptiveTone,
     });
 
     // Compute regex-based fallback escalation
@@ -384,6 +398,7 @@ export class AiService {
     specialist: { category: LegalCategory; documentChecklist: string[] };
     classification: Classification;
     clarifyingQuestions: string[];
+    adaptiveTone: string;
   }): Promise<{ raw: string | null; parsed: any; model: string | null; usage: any | null; fallbackUsed: boolean }> {
     const prompt = getPrompt('legal-chat-v1');
     const apiKey = process.env.OPENAI_API_KEY;
@@ -418,6 +433,7 @@ export class AiService {
 
     const userContent = [
       `PROMPT_VERSION=${prompt.version}`,
+      `ADAPTIVE_TONE=${args.adaptiveTone}`,
       `CATEGORY=${args.specialist.category}`,
       `RISK_LEVEL=${args.classification.riskLevel}`,
       `USER_MEMORY:\n${args.userMemory || '(none)'}`,

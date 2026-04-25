@@ -22,6 +22,14 @@ export class RedisCacheService {
     await this.redis.set(key, JSON.stringify(value), 'EX', ttlSec);
   }
 
+  async incr(key: string): Promise<number> {
+    return this.redis.incr(key);
+  }
+
+  async get(key: string): Promise<string | null> {
+    return this.redis.get(key);
+  }
+
   async del(key: string): Promise<void> {
     await this.redis.del(key);
   }

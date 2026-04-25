@@ -25,29 +25,32 @@ export class AiMonitoringService {
     const startDate = new Date(endDate.getTime() - 24 * 60 * 60 * 1000);
 
     try {
-      const [hallucinationRate, correctnessTrend, escalationRate] = await Promise.all([
-        this.audits.getHallucinationRate(startDate, endDate),
-        this.audits.getCorrectnessTrend(startDate, endDate),
-        this.audits.getEscalationRate(startDate, endDate)
-      ]);
+      const categoryMetrics = await this.audits.getMetricsByCategory(startDate, endDate);
 
-      this.logger.log(`Metrics (Last 24h) | Hallucination: ${(hallucinationRate * 100).toFixed(1)}% | Correctness: ${(correctnessTrend * 100).toFixed(1)}% | Escalation: ${(escalationRate * 100).toFixed(1)}%`);
+      for (const row of categoryMetrics) {
+        const category = row.category;
+        const hallucinationRate = parseFloat(row.hallucinationRate || '0');
+        const correctnessTrend = parseFloat(row.correctnessTrend || '0');
+        const escalationRate = parseFloat(row.escalationRate || '0');
 
-      // Store health state for adaptive behaviors
-      await this.cache.setJson('ai:health:metrics', {
-        hallucinationRate,
-        correctnessTrend,
-        escalationRate,
-        updatedAt: new Date().toISOString()
-      }, 86400); // 1 day TTL
+        this.logger.log(`Metrics [${category}] (Last 24h) | Hallucination: ${(hallucinationRate * 100).toFixed(1)}% | Correctness: ${(correctnessTrend * 100).toFixed(1)}% | Escalation: ${(escalationRate * 100).toFixed(1)}%`);
 
-      // Trigger Alerts
-      if (hallucinationRate > this.MAX_HALLUCINATION_RATE) {
-        this.triggerAlert(`CRITICAL: Hallucination rate has spiked to ${(hallucinationRate * 100).toFixed(1)}%. Threshold is ${(this.MAX_HALLUCINATION_RATE * 100).toFixed(1)}%.`);
-      }
+        // Store health state for adaptive behaviors per category
+        await this.cache.setJson(`ai:health:metrics:${category}`, {
+          hallucinationRate,
+          correctnessTrend,
+          escalationRate,
+          updatedAt: new Date().toISOString()
+        }, 86400); // 1 day TTL
 
-      if (correctnessTrend < this.MIN_CORRECTNESS_SCORE && correctnessTrend > 0) { // > 0 check to ignore periods with no evaluations
-        this.triggerAlert(`WARNING: Correctness trend has dropped to ${(correctnessTrend * 100).toFixed(1)}%. Minimum acceptable is ${(this.MIN_CORRECTNESS_SCORE * 100).toFixed(1)}%.`);
+        // Trigger Alerts
+        if (hallucinationRate > this.MAX_HALLUCINATION_RATE) {
+          this.triggerAlert(`CRITICAL [${category}]: Hallucination rate spiked to ${(hallucinationRate * 100).toFixed(1)}%.`);
+        }
+
+        if (correctnessTrend < this.MIN_CORRECTNESS_SCORE && correctnessTrend > 0) {
+          this.triggerAlert(`WARNING [${category}]: Correctness trend dropped to ${(correctnessTrend * 100).toFixed(1)}%.`);
+        }
       }
 
     } catch (error: any) {

@@ -28,7 +28,7 @@ export class RetrievalService {
   ) {}
 
   // Replace with pgvector / Pinecone / Weaviate and enforce ACL via userId filters.
-  async retrieve(args: { userId: string; query: string; topK?: number; riskLevel?: 'low' | 'medium' | 'high' }): Promise<RetrievedChunk[]> {
+  async retrieve(args: { userId: string; query: string; topK?: number; riskLevel?: 'low' | 'medium' | 'high'; category?: string }): Promise<RetrievedChunk[]> {
     const t0 = Date.now();
     const finalTopK = args.topK ?? 5;
     const overfetchK = finalTopK * 2; // Reduced from 3x to 2x to save DB cost
@@ -66,14 +66,28 @@ export class RetrievalService {
 
     if (rows.length === 0) return [];
 
-    // 3. Initial Filtering & Conditional Re-ranking
-    // 3. Initial Filtering & Conditional Re-ranking
-    // Fetch global health state to adapt behavior
-    const health = await this.cache.getJson<{ hallucinationRate: number, correctnessTrend: number }>('ai:health:metrics');
-    const isHallucinating = (health?.hallucinationRate || 0) > 0.05; // > 5% hallucination rate triggers stricter behavior
+    // Apply chunk performance tracking penalties
+    for (const r of rows) {
+      const penaltyStr = await this.cache.get(`ai:chunk:penalty:${r.id}`);
+      if (penaltyStr) {
+        const penaltyCount = parseInt(penaltyStr, 10);
+        // Reduce similarity by 5% per penalty (e.g., 2 penalties = 10% reduction)
+        r.similarity = Math.max(0, Number(r.similarity) - (penaltyCount * 0.05));
+      }
+    }
 
-    // If system is hallucinating, increase the base similarity threshold to drop more noise
-    const baseThreshold = isHallucinating ? 0.50 : 0.40;
+    // 3. Initial Filtering & Conditional Re-ranking
+    // Fetch per-category health state to adapt behavior smoothly
+    const categoryKey = args.category || 'general';
+    const health = await this.cache.getJson<{ hallucinationRate: number, correctnessTrend: number }>(`ai:health:metrics:${categoryKey}`);
+    const hallucinationRate = health?.hallucinationRate || 0;
+    const isHallucinating = hallucinationRate > 0.05;
+
+    // Smooth scaling strictness factor (1.0 to 1.5) based on hallucination rate
+    const strictnessFactor = 1.0 + Math.min(hallucinationRate * 2, 0.5);
+
+    // Dynamic base threshold
+    const baseThreshold = 0.40 * strictnessFactor;
     const candidates = rows.filter((r: any) => Number(r.similarity) >= baseThreshold);
     if (candidates.length === 0) return [];
 

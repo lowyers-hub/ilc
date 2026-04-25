@@ -96,11 +96,17 @@ Respond strictly in JSON format:
       this.logger.log(`Successfully evaluated request: ${requestId} | Correctness: ${evaluationMetrics.correctnessScore} | Hallucination: ${evaluationMetrics.hallucinationScore}`);
       
       // 4. Adaptive Cache: Bypass cache for low-quality responses
-      // If the response is hallucinated or correctness is low, completely delete it from the cache
-      // so that the next identical query bypasses the cache and forces a fresh regeneration.
       if ((evaluationMetrics.hallucinationScore > 0 || evaluationMetrics.correctnessScore < 0.8) && audit.cacheKey) {
         this.logger.warn(`Removing low-quality response from cache for request: ${requestId}`);
         await this.cache.del(audit.cacheKey);
+      }
+
+      // 5. Chunk Performance Tracking: Penalize chunks involved in hallucinations
+      if (evaluationMetrics.hallucinationScore > 0 && retrievedChunks.length > 0) {
+        for (const chunkId of retrievedChunks) {
+          // Increment penalty score for the chunk (acts as a negative weight in future retrievals)
+          await this.cache.incr(`ai:chunk:penalty:${chunkId}`);
+        }
       }
 
     } catch (error: any) {
