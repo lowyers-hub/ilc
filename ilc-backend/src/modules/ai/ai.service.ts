@@ -116,6 +116,34 @@ export class AiService {
         .map(m => ({ role: m.role, content: m.content }));
     }
 
+    // Fetch past sessions to build user memory context
+    const pastSessions = await this.sessions.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+      take: 4,
+    });
+    
+    let userMemory = '';
+    const otherSessions = pastSessions.filter(s => s.id !== sessionId).slice(0, 3);
+    if (otherSessions.length > 0) {
+      const pastMessages = await this.messages.createQueryBuilder('msg')
+        .where('msg.sessionId IN (:...sessionIds)', { sessionIds: otherSessions.map(s => s.id) })
+        .andWhere('msg.role = :role', { role: 'user' })
+        .orderBy('msg.createdAt', 'ASC')
+        .getMany();
+        
+      const memoryLines: string[] = [];
+      for (const s of otherSessions) {
+        const firstMsg = pastMessages.find(m => m.sessionId === s.id);
+        if (firstMsg) {
+          memoryLines.push(`- Topik sebelumnya: "${firstMsg.content.slice(0, 150)}..."`);
+        }
+      }
+      if (memoryLines.length > 0) {
+        userMemory = memoryLines.join('\n');
+      }
+    }
+
     // Save user message
     await this.messages.save(this.messages.create({
       sessionId,
@@ -180,6 +208,7 @@ export class AiService {
     const gen = await this.generateLegalChatV1({
       message: args.message,
       history: chatHistory,
+      userMemory,
       retrieved,
       specialist,
       classification,
@@ -248,6 +277,7 @@ export class AiService {
   private async generateLegalChatV1(args: {
     message: string;
     history: ChatHistoryItem[];
+    userMemory: string;
     retrieved: Array<{ id: string; content: string; score: number; source: string }>;
     specialist: { category: LegalCategory; documentChecklist: string[] };
     classification: Classification;
@@ -288,6 +318,7 @@ export class AiService {
       `PROMPT_VERSION=${prompt.version}`,
       `CATEGORY=${args.specialist.category}`,
       `RISK_LEVEL=${args.classification.riskLevel}`,
+      `USER_MEMORY:\n${args.userMemory || '(none)'}`,
       ragBlock,
       historyBlock,
       args.clarifyingQuestions.length ? `CLARIFYING_QUESTIONS:\n- ${args.clarifyingQuestions.join('\n- ')}` : 'CLARIFYING_QUESTIONS: (none)',
