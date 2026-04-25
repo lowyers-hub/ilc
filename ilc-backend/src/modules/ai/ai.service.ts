@@ -3,6 +3,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { createHash, randomUUID } from 'crypto';
 import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
 
 import { RedisCacheService } from '@/common/cache/redis-cache.service';
 import { RetrievalService } from '@/modules/rag/services/retrieval.service';
@@ -51,6 +52,8 @@ export type LegalChatResponse = {
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
+  private openai?: OpenAI;
+  private anthropic?: Anthropic;
 
   constructor(
     private retrieval: RetrievalService,
@@ -60,7 +63,16 @@ export class AiService {
     @InjectRepository(ChatSessionEntity) private sessions: Repository<ChatSessionEntity>,
     @InjectRepository(ChatMessageEntity) private messages: Repository<ChatMessageEntity>,
     @InjectQueue('ai-evaluations') private aiEvaluationsQueue: Queue
-  ) {}
+  ) {
+    const openaiKey = process.env.OPENAI_API_KEY;
+    if (openaiKey) {
+      this.openai = new OpenAI({ apiKey: openaiKey });
+    }
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (anthropicKey) {
+      this.anthropic = new Anthropic({ apiKey: anthropicKey });
+    }
+  }
 
   async getSessions(userId: string) {
     return this.sessions.find({ where: { userId }, order: { createdAt: 'DESC' } });
@@ -468,20 +480,8 @@ export class AiService {
     confidence: 'low' | 'medium' | 'high';
   }): Promise<{ raw: string | null; parsed: any; model: string | null; usage: any | null; fallbackUsed: boolean }> {
     const prompt = getPrompt('legal-chat-v1');
-    const apiKey = process.env.OPENAI_API_KEY;
-    const model = process.env.OPENAI_CHAT_MODEL ?? 'gpt-4o-mini';
+    const mode = process.env.AI_PROVIDER_MODE || 'auto';
 
-    if (!apiKey) {
-      return {
-        raw: null,
-        model: null,
-        usage: null,
-        fallbackUsed: true,
-        parsed: fallbackLegalChat({ ...args, confidence: args.confidence }),
-      };
-    }
-
-    const client = new OpenAI({ apiKey });
     const ragBlock =
       args.retrieved.length === 0
         ? 'RAG_CONTEXT: (none)'
@@ -513,33 +513,77 @@ export class AiService {
       `RETRIEVED_CHUNK_IDS:\n${args.retrieved.map((r) => r.id).join(', ') || '(none)'}`,
     ].join('\n\n');
 
-    let res: any;
-    try {
-      res = await client.chat.completions.create({
-        model,
-        temperature: 0.2,
-        messages: [
-          { role: 'system', content: prompt.system },
-          { role: 'user', content: userContent },
-        ],
-      });
-    } catch (e: any) {
-      this.logger.error(`OpenAI Chat completion failed: ${e.message}`);
+    let raw: string | null = null;
+    let parsed: any = null;
+    let usedModel: string | null = null;
+    let usage: any = null;
+
+    // 1. Try Claude (Primary)
+    if (this.anthropic && (mode === 'auto' || mode === 'claude')) {
+      usedModel = 'claude-3-5-sonnet-20241022';
+      try {
+        const res = await this.anthropic.messages.create({
+          model: usedModel,
+          max_tokens: 1500,
+          temperature: 0.1,
+          system: prompt.system,
+          messages: [
+            { role: 'user', content: userContent + '\n\nOutput strictly valid JSON.' }
+          ]
+        });
+        
+        raw = (res.content[0] as any).text || '';
+        parsed = parseJsonObject(raw!);
+        usage = {
+          prompt_tokens: res.usage.input_tokens,
+          completion_tokens: res.usage.output_tokens,
+          total_tokens: res.usage.input_tokens + res.usage.output_tokens
+        };
+
+        // If confidence is LOW and mode is auto, we retry with OpenAI
+        if (parsed && parsed.confidence === 'low' && mode === 'auto' && this.openai) {
+          this.logger.warn(`Claude returned LOW confidence. Retrying with OpenAI.`);
+          parsed = null; // Clear to force OpenAI retry
+        }
+      } catch (e: any) {
+        this.logger.error(`Claude API failed: ${e.message}`);
+      }
+    }
+
+    // 2. Try OpenAI (Secondary)
+    if (!parsed && this.openai && (mode === 'auto' || mode === 'openai')) {
+      usedModel = process.env.OPENAI_CHAT_MODEL ?? 'gpt-4o-mini';
+      try {
+        const res = await this.openai.chat.completions.create({
+          model: usedModel,
+          temperature: 0.1,
+          response_format: { type: 'json_object' },
+          messages: [
+            { role: 'system', content: prompt.system },
+            { role: 'user', content: userContent },
+          ],
+        });
+
+        raw = res.choices?.[0]?.message?.content ?? '';
+        parsed = parseJsonObject(raw!);
+        usage = res.usage ?? null;
+      } catch (e: any) {
+        this.logger.error(`OpenAI Chat completion failed: ${e.message}`);
+      }
+    }
+
+    // 3. Fallback System
+    if (!parsed) {
       return {
-        raw: null,
-        model: null,
-        usage: null,
+        raw,
+        model: usedModel,
+        usage,
         fallbackUsed: true,
         parsed: fallbackLegalChat({ ...args, confidence: args.confidence }),
       };
     }
 
-    const raw = res.choices?.[0]?.message?.content ?? '';
-    const parsed = parseJsonObject(raw);
-    if (!parsed) {
-      return { raw, parsed: fallbackLegalChat({ ...args, confidence: args.confidence }), model, usage: res.usage ?? null, fallbackUsed: true };
-    }
-    return { raw, parsed, model, usage: res.usage ?? null, fallbackUsed: false };
+    return { raw, parsed, model: usedModel, usage, fallbackUsed: false };
   }
 }
 
