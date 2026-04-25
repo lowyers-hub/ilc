@@ -160,7 +160,8 @@ export class AiService {
     const hasContext = retrieved.length > 0;
 
     // Content cache (for UX/perf). We still generate a new requestId and audit record per request.
-    const cacheKey = `ai:chat:${promptVersion}:${userId}:${sha1(args.message)}`;
+    const historyHash = chatHistory.length > 0 ? sha1(JSON.stringify(chatHistory)) : 'empty';
+    const cacheKey = `ai:chat:${promptVersion}:${userId}:${sessionId}:${historyHash}:${sha1(args.message)}`;
     const cachedPayload = await this.cache.getJson<Omit<LegalChatResponse, 'requestId' | 'latencyMs' | 'cacheHit' | 'sessionId'>>(cacheKey);
     if (cachedPayload) {
       const out: LegalChatResponse = {

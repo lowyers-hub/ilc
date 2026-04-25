@@ -1,6 +1,7 @@
 import { Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('ai_chat_messages')
+@Index(['sessionId', 'createdAt'])
 export class ChatMessageEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
