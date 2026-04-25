@@ -28,7 +28,7 @@ export class RetrievalService {
   ) {}
 
   // Replace with pgvector / Pinecone / Weaviate and enforce ACL via userId filters.
-  async retrieve(args: { userId: string; query: string; topK?: number; riskLevel?: 'low' | 'medium' | 'high'; categories?: string[] }): Promise<RetrievedChunk[]> {
+  async retrieve(args: { userId: string; query: string; topK?: number; riskLevel?: 'low' | 'medium' | 'high'; categories?: string[]; isAmbiguous?: boolean }): Promise<RetrievedChunk[]> {
     const t0 = Date.now();
     const finalTopK = args.topK ?? 5;
     const overfetchK = finalTopK * 2; // Reduced from 3x to 2x to save DB cost
@@ -108,7 +108,12 @@ export class RetrievalService {
     const isHallucinating = maxHallucinationRate > 0.05;
 
     // Smooth scaling strictness factor (1.0 to 1.5) based on hallucination rate
-    const strictnessFactor = 1.0 + Math.min(maxHallucinationRate * 2, 0.5);
+    let strictnessFactor = 1.0 + Math.min(maxHallucinationRate * 2, 0.5);
+
+    // Predictive Layer: Increase strictness if query is highly ambiguous
+    if (args.isAmbiguous) {
+      strictnessFactor += 0.2;
+    }
 
     // Dynamic base threshold
     const baseThreshold = 0.40 * strictnessFactor;

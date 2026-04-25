@@ -226,15 +226,23 @@ export class AiService {
       meta: null,
     }));
 
+    // Predictive Layer: Detect ambiguity
+    const isAmbiguous = analyzeAmbiguity(args.message);
+
     const retrieved = await this.retrieval.retrieve({ 
       userId, 
       query: args.message, 
       topK: 10, 
       riskLevel: detailed.riskLevel,
-      categories: detailed.categories 
+      categories: detailed.categories,
+      isAmbiguous
     });
     const retrievedChunkIds = retrieved.map((c) => c.id);
     const hasContext = retrieved.length > 0;
+
+    // Predictive Layer: Detect low knowledge coverage
+    const maxRetrievalScore = retrieved.length > 0 ? Math.max(...retrieved.map(c => c.score)) : 0;
+    const lowCoverage = retrieved.length === 0 || maxRetrievalScore < 0.65;
 
     // Fetch health state to adapt AI behavior and tone
     let minCorrectnessTrend = 1.0;
@@ -245,9 +253,17 @@ export class AiService {
       }
     }
     const correctnessTrend = minCorrectnessTrend;
-    const adaptiveTone = correctnessTrend < 0.85 
+    let adaptiveTone = correctnessTrend < 0.85 
       ? 'CONSERVATIVE_MODE: Be extremely cautious. Emphasize that you are not a human lawyer. Do not make assumptions beyond the text.' 
       : 'CONFIDENT_MODE: Be helpful and direct based on the context.';
+
+    // Predictive Layer: Preemptively adjust tone to prevent hallucination
+    if (lowCoverage) {
+      adaptiveTone += '\nPREDICTIVE_WARNING (LOW_COVERAGE): The retrieved context is weak or missing. DO NOT invent laws or facts. State clearly that your knowledge is limited here.';
+    }
+    if (isAmbiguous) {
+      adaptiveTone += '\nPREDICTIVE_WARNING (HIGH_AMBIGUITY): The user query is vague or lacks specific facts. Provide general guidance, ask clarifying questions, and DO NOT make assumptions.';
+    }
 
     // Content cache (for UX/perf). We still generate a new requestId and audit record per request.
     const historyHash = chatHistory.length > 0 ? sha1(JSON.stringify(chatHistory)) : 'empty';
@@ -346,6 +362,8 @@ export class AiService {
       hasContext,
       clarifyingQuestionsCount: clarifyingQuestions.length,
       riskLevel: detailed.riskLevel,
+      lowCoverage,
+      isAmbiguous
     });
 
     const sanitized = sanitizeLegalChat(validated, this.safety, hasContext);
@@ -505,6 +523,12 @@ function omitMetaForCache(out: LegalChatResponse) {
   return rest;
 }
 
+function analyzeAmbiguity(message: string): boolean {
+  const wordCount = message.trim().split(/\s+/).length;
+  const hasSpecificFacts = /\b(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2}|rp|\d+\s*(juta|miliar|ribu)|pasal|undang-undang|uu)\b/i.test(message);
+  return wordCount < 10 || !hasSpecificFacts;
+}
+
 function classifyDetailed(message: string) {
   const m = message.toLowerCase();
   const has = (re: RegExp) => re.test(m);
@@ -565,8 +589,8 @@ function pickClarifyingQuestions(message: string, candidates: string[], max: num
   return candidates.slice(0, Math.max(2, Math.min(max, candidates.length)));
 }
 
-function deriveConfidence(args: { hasContext: boolean; clarifyingQuestionsCount: number; riskLevel: Classification['riskLevel'] }): 'low' | 'medium' | 'high' {
-  if (!args.hasContext || args.clarifyingQuestionsCount >= 2) return 'low';
+function deriveConfidence(args: { hasContext: boolean; clarifyingQuestionsCount: number; riskLevel: Classification['riskLevel']; lowCoverage: boolean; isAmbiguous: boolean }): 'low' | 'medium' | 'high' {
+  if (!args.hasContext || args.lowCoverage || args.isAmbiguous || args.clarifyingQuestionsCount >= 2) return 'low';
   if (args.riskLevel === 'high') return 'medium';
   return 'high';
 }
