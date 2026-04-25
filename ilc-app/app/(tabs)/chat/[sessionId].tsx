@@ -12,6 +12,7 @@ import { isRecording, startRecording, stopRecording } from '@/src/features/voice
 import { useTranscription } from '@/src/features/voice/useTranscription';
 import { enforceVoiceOrThrow } from '@/src/lib/entitlements/enforce';
 import { useUIStore } from '@/src/lib/stores/uiStore';
+import { logEvent } from '@/src/lib/telemetry/analytics';
 import type { ChatMessage } from '@/src/types/models';
 
 export default function ChatThreadScreen() {
@@ -38,6 +39,7 @@ export default function ChatThreadScreen() {
     const text = draft.trim();
     if (!text) return;
     setDraft('');
+    logEvent('question_submitted', { sessionId: String(sessionId) });
     await sendMutation.mutateAsync(text);
   }
 
@@ -82,7 +84,11 @@ export default function ChatThreadScreen() {
           <MessageBubble 
             msg={item} 
             isLatest={index === 0} 
-            onSuggestionPress={(text) => setDraft(text)} 
+            sessionId={String(sessionId)}
+            onSuggestionPress={(text) => {
+              setDraft(text);
+              logEvent('suggested_followup_clicked', { sessionId: String(sessionId), text_snippet: text.slice(0, 30) });
+            }} 
           />
         )}
         ListFooterComponent={
@@ -149,8 +155,24 @@ export default function ChatThreadScreen() {
   );
 }
 
-function MessageBubble({ msg, isLatest, onSuggestionPress }: { msg: ChatMessage, isLatest: boolean, onSuggestionPress: (text: string) => void }) {
+function MessageBubble({ msg, isLatest, sessionId, onSuggestionPress }: { msg: ChatMessage, isLatest: boolean, sessionId: string, onSuggestionPress: (text: string) => void }) {
   const isUser = msg.role === 'user';
+
+  useEffect(() => {
+    if (!isUser && isLatest && msg.structured) {
+      logEvent('ai_response_received', {
+        sessionId,
+        confidence: msg.structured.confidence,
+        escalation: msg.structured.escalation,
+        fallbackUsed: msg.structured.fallbackUsed
+      });
+      
+      if (msg.structured.fallbackUsed) logEvent('fallback_response_used', { sessionId });
+      if (msg.structured.confidence === 'low') logEvent('confidence_low_seen', { sessionId });
+      if (msg.structured.escalation) logEvent('escalation_cta_shown', { sessionId });
+      if (!msg.structured.escalation) logEvent('suggested_followup_shown', { sessionId });
+    }
+  }, [msg.id, isLatest, isUser]);
 
   return (
     <View className={`mb-6 ${isUser ? 'items-end' : 'items-start'}`}>
@@ -162,7 +184,7 @@ function MessageBubble({ msg, isLatest, onSuggestionPress }: { msg: ChatMessage,
         }`}
       >
         {msg.structured ? (
-          <StructuredAI msg={msg} isLatest={isLatest} onSuggestionPress={onSuggestionPress} />
+          <StructuredAI msg={msg} isLatest={isLatest} sessionId={sessionId} onSuggestionPress={onSuggestionPress} />
         ) : (
           <Text className="text-text text-[15px] leading-relaxed">{msg.content}</Text>
         )}
@@ -182,8 +204,9 @@ function MessageBubble({ msg, isLatest, onSuggestionPress }: { msg: ChatMessage,
   );
 }
 
-function StructuredAI({ msg, isLatest, onSuggestionPress }: { msg: ChatMessage, isLatest: boolean, onSuggestionPress: (text: string) => void }) {
+function StructuredAI({ msg, isLatest, sessionId, onSuggestionPress }: { msg: ChatMessage, isLatest: boolean, sessionId: string, onSuggestionPress: (text: string) => void }) {
   const ai = msg.structured!;
+  const [feedback, setFeedback] = React.useState<'up' | 'down' | null>(null);
 
   const SectionTitle = ({ children }: { children: string }) => (
     <Text className="text-subtext text-[11px] font-bold mt-5 mb-1 uppercase tracking-wider">
@@ -273,10 +296,6 @@ function StructuredAI({ msg, isLatest, onSuggestionPress }: { msg: ChatMessage, 
         </>
       ) : null}
 
-      <View className="mt-5 border-t border-divider/50 pt-3">
-        <Text className="text-subtext text-[11px] leading-relaxed italic">{ai.disclaimer}</Text>
-      </View>
-
       {ai.escalation ? (
         <View className="mt-4 p-4 border border-accent/30 rounded-xl bg-accent/5 gap-3">
           <View className="flex-row items-center gap-2">
@@ -289,9 +308,59 @@ function StructuredAI({ msg, isLatest, onSuggestionPress }: { msg: ChatMessage, 
           <Button
             title="Temukan Pengacara"
             variant="primary"
-            onPress={() => router.push({ pathname: '/(tabs)/account', params: { source: 'ai_escalation' } })}
+            onPress={() => {
+              logEvent('escalation_cta_clicked', { sessionId });
+              router.push({ pathname: '/(tabs)/account', params: { source: 'ai_escalation' } });
+            }}
             className="mt-1"
           />
+        </View>
+      ) : null}
+
+      <View className="mt-5 border-t border-divider/50 pt-3 flex-row items-center justify-between">
+        <Text className="text-subtext text-[11px] leading-relaxed italic flex-1 mr-4">{ai.disclaimer}</Text>
+        <View className="flex-row items-center gap-2">
+          <Text 
+            className={`text-lg transition-transform hover:scale-110 active:scale-95 ${feedback === 'up' ? 'opacity-100' : 'opacity-40'} cursor-pointer`}
+            onPress={() => {
+              if (feedback) return;
+              setFeedback('up');
+              logEvent('feedback_submitted', { sessionId, isHelpful: true });
+            }}
+          >
+            👍
+          </Text>
+          <Text 
+            className={`text-lg transition-transform hover:scale-110 active:scale-95 ${feedback === 'down' ? 'opacity-100' : 'opacity-40'} cursor-pointer`}
+            onPress={() => {
+              if (feedback) return;
+              setFeedback('down');
+              logEvent('feedback_submitted', { sessionId, isHelpful: false });
+            }}
+          >
+            👎
+          </Text>
+        </View>
+      </View>
+
+      {feedback === 'down' ? (
+        <View className="mt-3 p-3 bg-surface border border-divider rounded-xl">
+          <Text className="text-text text-[13px] font-medium mb-2">Maaf jika kurang membantu. Mengapa?</Text>
+          <View className="flex-row flex-wrap gap-2">
+            {['Tidak jelas', 'Terlalu umum', 'Tidak relevan'].map(r => (
+              <Button 
+                key={r}
+                title={r}
+                variant="ghost"
+                className="py-1 min-h-[32px] px-3 bg-black/5 dark:bg-white/5"
+                style={{ height: 32 }}
+                onPress={() => {
+                  logEvent('feedback_submitted', { sessionId, isHelpful: false, reason: r });
+                  setFeedback('up'); // Hide after clicking
+                }}
+              />
+            ))}
+          </View>
         </View>
       ) : null}
 
