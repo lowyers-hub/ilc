@@ -554,7 +554,12 @@ function omitMetaForCache(out: LegalChatResponse) {
 }
 
 function analyzeAmbiguity(message: string): boolean {
-  const wordCount = message.trim().split(/\s+/).length;
+  const m = message.trim();
+  // Educational queries are not ambiguous
+  if (/^(apa|bagaimana|jelaskan|sebutkan)\b/i.test(m)) {
+    return false;
+  }
+  const wordCount = m.split(/\s+/).length;
   const hasSpecificFacts = /\b(\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2}|rp|\d+\s*(juta|miliar|ribu)|pasal|undang-undang|uu)\b/i.test(message);
   return wordCount < 10 || !hasSpecificFacts;
 }
