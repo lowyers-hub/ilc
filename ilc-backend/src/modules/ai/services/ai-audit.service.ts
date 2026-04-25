@@ -37,14 +37,14 @@ export class AiAuditService {
 
   async getMetricsByCategory(startDate: Date, endDate: Date) {
     return this.repo.createQueryBuilder('audit')
-      .select(`audit.input->'classification'->>'category'`, 'category')
+      .select(`jsonb_array_elements_text(audit.input->'classification'->'categories')`, 'category')
       .addSelect(`SUM(CAST(audit.evaluations->>'hallucinationScore' AS NUMERIC)) / NULLIF(COUNT(audit.id), 0)`, 'hallucinationRate')
       .addSelect(`AVG(CAST(audit.evaluations->>'correctnessScore' AS NUMERIC))`, 'correctnessTrend')
       .addSelect(`SUM(CASE WHEN audit.escalation = true THEN 1 ELSE 0 END)::DECIMAL / NULLIF(COUNT(audit.id), 0)`, 'escalationRate')
       .where('audit.createdAt BETWEEN :startDate AND :endDate', { startDate, endDate })
-      .andWhere("audit.input->'classification'->>'category' IS NOT NULL")
+      .andWhere("audit.input->'classification'->'categories' IS NOT NULL")
       .andWhere('audit.evaluations IS NOT NULL')
-      .groupBy(`audit.input->'classification'->>'category'`)
+      .groupBy(`jsonb_array_elements_text(audit.input->'classification'->'categories')`)
       .getRawMany();
   }
 

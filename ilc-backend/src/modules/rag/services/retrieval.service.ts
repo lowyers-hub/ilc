@@ -28,7 +28,7 @@ export class RetrievalService {
   ) {}
 
   // Replace with pgvector / Pinecone / Weaviate and enforce ACL via userId filters.
-  async retrieve(args: { userId: string; query: string; topK?: number; riskLevel?: 'low' | 'medium' | 'high'; category?: string }): Promise<RetrievedChunk[]> {
+  async retrieve(args: { userId: string; query: string; topK?: number; riskLevel?: 'low' | 'medium' | 'high'; categories?: string[] }): Promise<RetrievedChunk[]> {
     const t0 = Date.now();
     const finalTopK = args.topK ?? 5;
     const overfetchK = finalTopK * 2; // Reduced from 3x to 2x to save DB cost
@@ -95,13 +95,20 @@ export class RetrievalService {
 
     // 3. Initial Filtering & Conditional Re-ranking
     // Fetch per-category health state to adapt behavior smoothly
-    const categoryKey = args.category || 'general';
-    const health = await this.cache.getJson<{ hallucinationRate: number, correctnessTrend: number }>(`ai:health:metrics:${categoryKey}`);
-    const hallucinationRate = health?.hallucinationRate || 0;
-    const isHallucinating = hallucinationRate > 0.05;
+    const categoryKeys = args.categories && args.categories.length > 0 ? args.categories : ['general'];
+    let maxHallucinationRate = 0;
+    
+    for (const cat of categoryKeys) {
+      const health = await this.cache.getJson<{ hallucinationRate: number, correctnessTrend: number }>(`ai:health:metrics:${cat}`);
+      if (health && health.hallucinationRate > maxHallucinationRate) {
+        maxHallucinationRate = health.hallucinationRate;
+      }
+    }
+    
+    const isHallucinating = maxHallucinationRate > 0.05;
 
     // Smooth scaling strictness factor (1.0 to 1.5) based on hallucination rate
-    const strictnessFactor = 1.0 + Math.min(hallucinationRate * 2, 0.5);
+    const strictnessFactor = 1.0 + Math.min(maxHallucinationRate * 2, 0.5);
 
     // Dynamic base threshold
     const baseThreshold = 0.40 * strictnessFactor;

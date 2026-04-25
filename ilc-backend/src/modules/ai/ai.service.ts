@@ -15,7 +15,7 @@ import { getPrompt, SPECIALISTS, type LegalCategory } from './prompts/prompt-reg
 import { AiAuditService } from './services/ai-audit.service';
 import { SafetySanitizerService } from './services/safety-sanitizer.service';
 
-export type Classification = { category: string; intent: string; riskLevel: 'low' | 'medium' | 'high' };
+export type Classification = { categories: string[]; intent: string; riskLevel: 'low' | 'medium' | 'high' };
 export type ChatHistoryItem = { role: 'user' | 'assistant'; content: string };
 
 export type EscalationMeta = {
@@ -92,7 +92,7 @@ export class AiService {
 
   async classify(message: string): Promise<Classification> {
     const d = classifyDetailed(message);
-    return { category: d.categoryLabel, intent: d.intent, riskLevel: d.riskLevel };
+    return { categories: d.categoryLabels, intent: d.intent, riskLevel: d.riskLevel };
   }
 
   async chat(userId: string, args: { message: string; sessionId?: string }) {
@@ -100,7 +100,7 @@ export class AiService {
     const requestId = randomUUID();
     const promptVersion = getPrompt('legal-chat-v1').version;
     const detailed = classifyDetailed(args.message);
-    const classification = { category: detailed.categoryLabel, intent: detailed.intent, riskLevel: detailed.riskLevel };
+    const classification = { categories: detailed.categoryLabels, intent: detailed.intent, riskLevel: detailed.riskLevel };
 
     // Handle Session
     let sessionId = args.sessionId || '';
@@ -202,9 +202,9 @@ export class AiService {
 
       // Filter memory to only inject highly relevant past issues into the prompt
       // This saves tokens and reduces noise by omitting completely unrelated past legal problems
-      const currentCategory = detailed.categoryLabel;
+      const currentCategories = detailed.categories;
       const relevantPastIssues = structuredMemory.pastIssues.filter(
-        issue => issue.category === currentCategory || issue.status === 'Belum selesai'
+        issue => currentCategories.includes(issue.category) || issue.status === 'Belum selesai'
       );
 
       for (const issue of relevantPastIssues) {
@@ -231,14 +231,20 @@ export class AiService {
       query: args.message, 
       topK: 10, 
       riskLevel: detailed.riskLevel,
-      category: detailed.categoryLabel 
+      categories: detailed.categories 
     });
     const retrievedChunkIds = retrieved.map((c) => c.id);
     const hasContext = retrieved.length > 0;
 
     // Fetch health state to adapt AI behavior and tone
-    const health = await this.cache.getJson<{ correctnessTrend: number }>(`ai:health:metrics:${detailed.categoryLabel}`);
-    const correctnessTrend = health?.correctnessTrend || 1.0;
+    let minCorrectnessTrend = 1.0;
+    for (const cat of detailed.categories) {
+      const health = await this.cache.getJson<{ correctnessTrend: number }>(`ai:health:metrics:${cat}`);
+      if (health && health.correctnessTrend < minCorrectnessTrend) {
+        minCorrectnessTrend = health.correctnessTrend;
+      }
+    }
+    const correctnessTrend = minCorrectnessTrend;
     const adaptiveTone = correctnessTrend < 0.85 
       ? 'CONSERVATIVE_MODE: Be extremely cautious. Emphasize that you are not a human lawyer. Do not make assumptions beyond the text.' 
       : 'CONFIDENT_MODE: Be helpful and direct based on the context.';
@@ -303,7 +309,15 @@ export class AiService {
       return out;
     }
 
-    const specialist = SPECIALISTS[detailed.category];
+    // Combine specialists for multi-label
+    const documentChecklist = [...new Set(detailed.categories.flatMap(cat => SPECIALISTS[cat as LegalCategory]?.documentChecklist || []))];
+    const clarifyingFacts = [...new Set(detailed.categories.flatMap(cat => SPECIALISTS[cat as LegalCategory]?.clarifyingFacts || []))];
+    
+    const specialist = { 
+      categories: detailed.categoryLabels, 
+      documentChecklist,
+      clarifyingFacts
+    };
     const clarifyingQuestions = pickClarifyingQuestions(args.message, specialist.clarifyingFacts, 4);
     const gen = await this.generateLegalChatV1({
       message: args.message,
@@ -374,7 +388,7 @@ export class AiService {
       fallbackUsed: out.fallbackUsed,
       cacheHit: false,
       latencyMs: out.latencyMs,
-      input: { ...args, classification, specialist: specialist.category, clarifyingQuestions },
+      input: { ...args, classification, specialist: specialist.categories, clarifyingQuestions },
       rawModelOutput: gen.raw,
       sanitizedOutput: sanitized,
       finalResponse: out,
@@ -395,7 +409,7 @@ export class AiService {
     history: ChatHistoryItem[];
     userMemory: string;
     retrieved: Array<{ id: string; content: string; score: number; source: string }>;
-    specialist: { category: LegalCategory; documentChecklist: string[] };
+    specialist: { categories: string[]; documentChecklist: string[] };
     classification: Classification;
     clarifyingQuestions: string[];
     adaptiveTone: string;
@@ -434,7 +448,7 @@ export class AiService {
     const userContent = [
       `PROMPT_VERSION=${prompt.version}`,
       `ADAPTIVE_TONE=${args.adaptiveTone}`,
-      `CATEGORY=${args.specialist.category}`,
+      `CATEGORIES=${args.specialist.categories.join(', ')}`,
       `RISK_LEVEL=${args.classification.riskLevel}`,
       `USER_MEMORY:\n${args.userMemory || '(none)'}`,
       ragBlock,
@@ -495,48 +509,50 @@ function classifyDetailed(message: string) {
   const m = message.toLowerCase();
   const has = (re: RegExp) => re.test(m);
 
-  const category: LegalCategory = has(/\b(phk|pesangon|upah|karyawan|pkwt|pkwtt|ketenagakerjaan)\b/)
-    ? 'employment'
-    : has(/\b(kontrak|perjanjian|klausul|terminasi|wanprestasi)\b/)
-      ? 'contracts'
-      : has(/\b(utang|invoice|tagihan|piutang)\b/)
-        ? 'debt'
-        : has(/\b(refund|garansi|penjual|marketplace|konsumen)\b/)
-          ? 'consumer'
-          : has(/\b(sewa|kost|kontrakan|deposit)\b/)
-            ? 'landlord_tenant'
-            : has(/\b(cerai|perceraian|hak asuh|nafkah|harta bersama|kdrt)\b/)
-              ? 'family'
-              : has(/\b(pidana|polisi|pengadilan|lapor polisi|penipuan|penggelapan)\b/)
-                ? 'criminal'
-                : 'general';
+  const categories: string[] = [];
+  const categoryLabels: string[] = [];
+
+  if (has(/\b(phk|pesangon|upah|karyawan|pkwt|pkwtt|ketenagakerjaan)\b/)) {
+    categories.push('employment');
+    categoryLabels.push('Employment/PHK');
+  }
+  if (has(/\b(kontrak|perjanjian|klausul|terminasi|wanprestasi)\b/)) {
+    categories.push('contracts');
+    categoryLabels.push('Contracts');
+  }
+  if (has(/\b(utang|invoice|tagihan|piutang)\b/)) {
+    categories.push('debt');
+    categoryLabels.push('Debt/Invoice');
+  }
+  if (has(/\b(refund|garansi|penjual|marketplace|konsumen)\b/)) {
+    categories.push('consumer');
+    categoryLabels.push('Consumer');
+  }
+  if (has(/\b(sewa|kost|kontrakan|deposit)\b/)) {
+    categories.push('landlord_tenant');
+    categoryLabels.push('Landlord/Tenant');
+  }
+  if (has(/\b(cerai|perceraian|hak asuh|nafkah|harta bersama|kdrt)\b/)) {
+    categories.push('family');
+    categoryLabels.push('Family');
+  }
+  if (has(/\b(pidana|polisi|pengadilan|lapor polisi|penipuan|penggelapan)\b/)) {
+    categories.push('criminal');
+    categoryLabels.push('Criminal Risk');
+  }
+
+  if (categories.length === 0) {
+    categories.push('general');
+    categoryLabels.push('General');
+  }
 
   const riskLevel: Classification['riskLevel'] = has(/\b(pidana|polisi|pengadilan|penahanan)\b/)
     ? 'high'
-    : has(/\b(somasi|deadline|jatuh tempo|gugatan)\b/)
+    : has(/\b(somasi|deadline|jatuh tempo|gugatan)\b/) || categories.includes('contracts') || categories.includes('debt')
       ? 'medium'
-      : category === 'contracts' || category === 'debt'
-        ? 'medium'
-        : 'low';
+      : 'low';
 
-  const categoryLabel =
-    category === 'employment'
-      ? 'Employment/PHK'
-      : category === 'contracts'
-        ? 'Contracts'
-        : category === 'debt'
-          ? 'Debt/Invoice'
-          : category === 'consumer'
-            ? 'Consumer'
-            : category === 'landlord_tenant'
-              ? 'Landlord/Tenant'
-              : category === 'family'
-                ? 'Family'
-                : category === 'criminal'
-                  ? 'Criminal Risk'
-                  : 'General';
-
-  return { category, categoryLabel, riskLevel, intent: 'triage' as const };
+  return { categories, categoryLabels, riskLevel, intent: 'triage' as const };
 }
 
 function pickClarifyingQuestions(message: string, candidates: string[], max: number) {
@@ -564,16 +580,16 @@ function computeEscalation(message: string, d: ReturnType<typeof classifyDetaile
 
   let escalation = d.riskLevel === 'high' || mentionsCourt || mentionsPolice || (mentionsDeadline && d.riskLevel !== 'low') || bigMoney;
   let recommendedSpecialization: EscalationMeta['recommendedSpecialization'] =
-    d.category === 'employment'
-      ? 'employment'
-      : d.category === 'contracts' || d.category === 'debt' || d.category === 'landlord_tenant'
-        ? 'contract'
-        : d.category === 'consumer'
-          ? 'consumer'
-          : d.category === 'family'
-            ? 'family'
-            : d.category === 'criminal'
-              ? 'criminal'
+    d.categories.includes('criminal')
+      ? 'criminal'
+      : d.categories.includes('family')
+        ? 'family'
+        : d.categories.includes('employment')
+          ? 'employment'
+          : d.categories.includes('consumer')
+            ? 'consumer'
+            : d.categories.includes('contracts') || d.categories.includes('debt') || d.categories.includes('landlord_tenant')
+              ? 'contract'
               : 'contract';
 
   const reason = mentionsPolice
