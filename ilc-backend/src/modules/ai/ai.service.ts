@@ -126,25 +126,41 @@ export class AiService {
     let userMemory = '';
     const otherSessions = pastSessions.filter(s => s.id !== sessionId).slice(0, 3);
     if (otherSessions.length > 0) {
-      const pastMessages = await this.messages.createQueryBuilder('msg')
-        .where('msg.sessionId IN (:...sessionIds)', { sessionIds: otherSessions.map(s => s.id) })
-        .orderBy('msg.createdAt', 'ASC')
+      // Optimized query: Fetch only the first and last message of each session to reduce memory footprint
+      const sessionIds = otherSessions.map(s => s.id);
+      
+      const firstUserMessages = await this.messages.createQueryBuilder('msg')
+        .where('msg.sessionId IN (:...sessionIds)', { sessionIds })
+        .andWhere('msg.role = :role', { role: 'user' })
+        .distinctOn(['msg.sessionId'])
+        .orderBy('msg.sessionId', 'ASC')
+        .addOrderBy('msg.createdAt', 'ASC')
         .getMany();
         
+      const lastAssistantMessages = await this.messages.createQueryBuilder('msg')
+        .where('msg.sessionId IN (:...sessionIds)', { sessionIds })
+        .andWhere('msg.role = :role', { role: 'assistant' })
+        .distinctOn(['msg.sessionId'])
+        .orderBy('msg.sessionId', 'ASC')
+        .addOrderBy('msg.createdAt', 'DESC')
+        .getMany();
+
       const memoryLines: string[] = [];
       for (const s of otherSessions) {
-        const sessionMsgs = pastMessages.filter(m => m.sessionId === s.id);
-        const firstUserMsg = sessionMsgs.find(m => m.role === 'user');
-        const lastAsstMsg = [...sessionMsgs].reverse().find(m => m.role === 'assistant');
+        const firstUserMsg = firstUserMessages.find(m => m.sessionId === s.id);
+        const lastAsstMsg = lastAssistantMessages.find(m => m.sessionId === s.id);
 
-        if (firstUserMsg && lastAsstMsg && lastAsstMsg.meta) {
+        if (firstUserMsg) {
           const issue = firstUserMsg.content.slice(0, 100).replace(/\n/g, ' ');
-          const isEscalated = lastAsstMsg.meta.escalation ? 'Eskalasi ke Pengacara' : 'Selesai di AI';
-          const recommendation = lastAsstMsg.meta.escalationMeta?.recommendedSpecialization || 'Umum';
+          let status = 'Belum selesai';
+          let recommendation = 'Umum';
+
+          if (lastAsstMsg && lastAsstMsg.meta) {
+            status = lastAsstMsg.meta.escalation ? 'Eskalasi ke Pengacara' : 'Selesai di AI';
+            recommendation = lastAsstMsg.meta.escalationMeta?.recommendedSpecialization || 'Umum';
+          }
           
-          memoryLines.push(`- Isu: "${issue}..." | Status: ${isEscalated} | Rekomendasi Spesialisasi: ${recommendation}`);
-        } else if (firstUserMsg) {
-          memoryLines.push(`- Isu: "${firstUserMsg.content.slice(0, 100).replace(/\n/g, ' ')}..." | Status: Belum selesai`);
+          memoryLines.push(`- Isu: "${issue}..." | Status: ${status} | Rekomendasi Spesialisasi: ${recommendation}`);
         }
       }
       if (memoryLines.length > 0) {
@@ -170,7 +186,10 @@ export class AiService {
     // Content cache (for UX/perf). We still generate a new requestId and audit record per request.
     const historyHash = chatHistory.length > 0 ? sha1(JSON.stringify(chatHistory)) : 'empty';
     const userMemoryHash = userMemory ? sha1(userMemory) : 'empty';
-    const retrievedChunksHash = retrievedChunkIds.length > 0 ? sha1(JSON.stringify(retrievedChunkIds)) : 'empty';
+    
+    // Sort chunk IDs to prevent cache misses on identical chunks returned in different order
+    const retrievedChunksHash = retrievedChunkIds.length > 0 ? sha1(JSON.stringify([...retrievedChunkIds].sort())) : 'empty';
+    
     const cacheKey = `ai:chat:${promptVersion}:${userId}:${sessionId}:${historyHash}:${userMemoryHash}:${retrievedChunksHash}:${sha1(args.message)}`;
     const cachedPayload = await this.cache.getJson<Omit<LegalChatResponse, 'requestId' | 'latencyMs' | 'cacheHit' | 'sessionId'>>(cacheKey);
     if (cachedPayload) {

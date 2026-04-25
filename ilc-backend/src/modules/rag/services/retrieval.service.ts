@@ -132,10 +132,10 @@ Your task is to rewrite the user's query to improve vector search retrieval.
       const prompt = `Rate the relevance of the following document chunks to the user query on a scale of 0.0 to 1.0.
 Query: "${query}"
 
-Return ONLY a valid JSON array of numbers corresponding to the chunks in order. Example: [0.9, 0.2, 0.8]
+Return a JSON object containing a "scores" array of numbers corresponding to the chunks in order. Example: { "scores": [0.9, 0.2, 0.8] }
 
 Chunks:
-${chunks.map((c, i) => `[Chunk ${i}]: ${c.content.slice(0, 300)}...`).join('\n\n')}`;
+${chunks.map((c, i) => `[Chunk ${i}]: ${c.content.slice(0, 1000)}...`).join('\n\n')}`;
 
       const res = await client.chat.completions.create({
         model: 'gpt-4o-mini',
@@ -151,9 +151,9 @@ ${chunks.map((c, i) => `[Chunk ${i}]: ${c.content.slice(0, 300)}...`).join('\n\n
       const parsed = JSON.parse(raw);
       const scores: number[] = parsed.scores || [];
 
-      // Map scores back and sort
+      // Map scores back and sort. If the LLM misses a score, fallback to 0.0 (do not mix with raw cosine similarity)
       return chunks
-        .map((c, i) => ({ ...c, score: scores[i] ?? Number(c.similarity) }))
+        .map((c, i) => ({ ...c, score: scores[i] ?? 0.0 }))
         .sort((a, b) => b.score - a.score);
 
     } catch (e) {
