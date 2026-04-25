@@ -94,6 +94,8 @@ export class AiService {
     const t0 = Date.now();
     const requestId = randomUUID();
     const promptVersion = getPrompt('legal-chat-v1').version;
+    const detailed = classifyDetailed(args.message);
+    const classification = { category: detailed.categoryLabel, intent: detailed.intent, riskLevel: detailed.riskLevel };
 
     // Handle Session
     let sessionId = args.sessionId || '';
@@ -152,7 +154,7 @@ export class AiService {
       const structuredMemory = {
         userId,
         lastUpdated: new Date().toISOString(),
-        pastIssues: [] as Array<{ sessionId: string; issue: string; status: string; recommendation: string }>
+        pastIssues: [] as Array<{ sessionId: string; category: string; issue: string; status: string; recommendation: string }>
       };
 
       for (const s of otherSessions) {
@@ -163,24 +165,39 @@ export class AiService {
           const issue = firstUserMsg.content.slice(0, 100).replace(/\n/g, ' ');
           let status = 'Belum selesai';
           let recommendation = 'Umum';
+          let pastCategory = 'general';
 
           if (lastAsstMsg && lastAsstMsg.meta) {
             status = lastAsstMsg.meta.escalation ? 'Eskalasi ke Pengacara' : 'Selesai di AI';
             recommendation = lastAsstMsg.meta.escalationMeta?.recommendedSpecialization || 'Umum';
+            // Extract the actual category the LLM classified this past session as
+            pastCategory = lastAsstMsg.meta.escalationMeta?.recommendedSpecialization || 'general';
           }
           
-          memoryLines.push(`- Isu: "${issue}..." | Status: ${status} | Rekomendasi Spesialisasi: ${recommendation}`);
           structuredMemory.pastIssues.push({
             sessionId: s.id,
+            category: pastCategory,
             issue: `${issue}...`,
             status,
             recommendation
           });
         }
       }
+
+      // Filter memory to only inject highly relevant past issues into the prompt
+      // This saves tokens and reduces noise by omitting completely unrelated past legal problems
+      const currentCategory = detailed.categoryLabel;
+      const relevantPastIssues = structuredMemory.pastIssues.filter(
+        issue => issue.category === currentCategory || issue.status === 'Belum selesai'
+      );
+
+      for (const issue of relevantPastIssues) {
+         memoryLines.push(`- Isu: "${issue.issue}" | Status: ${issue.status} | Rekomendasi: ${issue.recommendation}`);
+      }
+
       if (memoryLines.length > 0) {
         userMemory = memoryLines.join('\n');
-        // Store structured memory in cache for analytics and personalization
+        // Store the FULL structured memory in cache for analytics and personalization (UI)
         await this.cache.setJson(`ai:memory:${userId}`, structuredMemory, 86400 * 7); // Cache for 7 days
       }
     }
@@ -192,9 +209,6 @@ export class AiService {
       content: args.message,
       meta: null,
     }));
-
-    const detailed = classifyDetailed(args.message);
-    const classification = { category: detailed.categoryLabel, intent: detailed.intent, riskLevel: detailed.riskLevel };
 
     const retrieved = await this.retrieval.retrieve({ userId, query: args.message, topK: 10, riskLevel: detailed.riskLevel });
     const retrievedChunkIds = retrieved.map((c) => c.id);
