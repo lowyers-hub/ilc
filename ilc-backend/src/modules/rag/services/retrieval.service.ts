@@ -139,7 +139,7 @@ Your task is to rewrite the user's query to improve vector search retrieval.
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
       // Fallback: just use the cosine similarity from pgvector
-      return chunks.map(c => ({ ...c, score: Number(c.similarity) }));
+      return chunks.map((c: any) => ({ ...c, score: Number(c.similarity) }));
     }
 
     try {
@@ -151,7 +151,7 @@ Query: "${query}"
 Return a JSON object containing a "scores" array of numbers corresponding to the chunks in order. Example: { "scores": [0.9, 0.2, 0.8] }
 
 Chunks:
-${chunks.map((c, i) => `[Chunk ${i}]: ${c.content.slice(0, 1000)}...`).join('\n\n')}`;
+${chunks.map((c: any, i: number) => `[Chunk ${i}]: ${c.content.slice(0, 1000)}...`).join('\n\n')}`;
 
       const res = await client.chat.completions.create({
         model: 'gpt-4o-mini',
@@ -169,12 +169,12 @@ ${chunks.map((c, i) => `[Chunk ${i}]: ${c.content.slice(0, 1000)}...`).join('\n\
 
       // Map scores back and sort. If the LLM misses a score, fallback to 0.0 (do not mix with raw cosine similarity)
       return chunks
-        .map((c, i) => ({ ...c, score: scores[i] ?? 0.0 }))
+        .map((c: any, i: number) => ({ ...c, score: scores[i] ?? 0.0 }))
         .sort((a, b) => b.score - a.score);
 
     } catch (e) {
       console.error('Reranking failed:', e);
-      return chunks.map(c => ({ ...c, score: Number(c.similarity) }));
+      return chunks.map((c: any) => ({ ...c, score: Number(c.similarity) }));
     }
   }
 }

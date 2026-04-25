@@ -96,7 +96,7 @@ export class AiService {
     const promptVersion = getPrompt('legal-chat-v1').version;
 
     // Handle Session
-    let sessionId = args.sessionId;
+    let sessionId = args.sessionId || '';
     let chatHistory: ChatHistoryItem[] = [];
     if (!sessionId) {
       const newSession = await this.sessions.save(this.sessions.create({ userId }));
@@ -127,6 +127,7 @@ export class AiService {
     });
     
     let userMemory = '';
+    const memoryLines: string[] = [];
     const otherSessions = pastSessions.filter((s: ChatSessionEntity) => s.id !== sessionId).slice(0, 3);
     if (otherSessions.length > 0) {
       // Optimized query: Fetch only the first and last message of each session to reduce memory footprint
@@ -148,7 +149,6 @@ export class AiService {
         .addOrderBy('msg.createdAt', 'DESC')
         .getMany();
 
-      const memoryLines: string[] = [];
       const structuredMemory = {
         userId,
         lastUpdated: new Date().toISOString(),
@@ -202,12 +202,16 @@ export class AiService {
 
     // Content cache (for UX/perf). We still generate a new requestId and audit record per request.
     const historyHash = chatHistory.length > 0 ? sha1(JSON.stringify(chatHistory)) : 'empty';
-    const userMemoryHash = userMemory ? sha1(userMemory) : 'empty';
     
-    // Sort chunk IDs to prevent cache misses on identical chunks returned in different order
-    const retrievedChunksHash = retrievedChunkIds.length > 0 ? sha1(JSON.stringify([...retrievedChunkIds].sort())) : 'empty';
+    // Normalize user memory for hashing (lowercase, trim, deduplicate, sort) to prevent cache misses on superficial differences
+    const normalizedMemory = [...new Set(memoryLines.map((line: string) => line.trim().toLowerCase()))].sort().join('\n');
+    const userMemoryHash = normalizedMemory ? sha1(normalizedMemory) : 'empty';
     
-    const cacheKey = `ai:chat:${promptVersion}:${userId}:${sessionId}:${historyHash}:${userMemoryHash}:${retrievedChunksHash}:${sha1(args.message)}`;
+    // Deduplicate and sort chunk IDs to prevent cache misses on identical chunks returned in different order or with duplicates
+    const normalizedChunkIds = [...new Set(retrievedChunkIds.map((id: string) => id.trim()))].sort();
+    const retrievedChunksHash = normalizedChunkIds.length > 0 ? sha1(JSON.stringify(normalizedChunkIds)) : 'empty';
+    
+    const cacheKey = `ai:chat:${promptVersion}:${userId}:${sessionId}:${historyHash}:${userMemoryHash}:${retrievedChunksHash}:${sha1(args.message.trim().toLowerCase())}`;
     const cachedPayload = await this.cache.getJson<Omit<LegalChatResponse, 'requestId' | 'latencyMs' | 'cacheHit' | 'sessionId'>>(cacheKey);
     if (cachedPayload) {
       const out: LegalChatResponse = {
