@@ -156,6 +156,8 @@ export class AiService {
         .addOrderBy('msg.createdAt', 'DESC')
         .getMany();
 
+      const sessionEvaluations = await this.audits.getEvaluationsBySessionIds(sessionIds);
+
       const structuredMemory = {
         userId,
         lastUpdated: new Date().toISOString(),
@@ -163,6 +165,15 @@ export class AiService {
       };
 
       for (const s of otherSessions) {
+        // Adaptive Memory: Check if this session had a bad evaluation
+        const audit = sessionEvaluations.find(a => a.input?.sessionId === s.id);
+        if (audit && audit.evaluations) {
+          const { hallucinationScore = 0, correctnessScore = 1.0 } = audit.evaluations;
+          if (hallucinationScore === 1 || correctnessScore < 0.8) {
+            continue; // Reduce influence by completely skipping low-quality past sessions
+          }
+        }
+
         const firstUserMsg = firstUserMessages.find((m: ChatMessageEntity) => m.sessionId === s.id);
         const lastAsstMsg = lastAssistantMessages.find((m: ChatMessageEntity) => m.sessionId === s.id);
 
@@ -267,6 +278,7 @@ export class AiService {
         rawModelOutput: null,
         sanitizedOutput: out, // already sanitized
         finalResponse: out,
+        cacheKey,
       });
       
       // Dispatch background evaluation job
@@ -352,6 +364,7 @@ export class AiService {
       rawModelOutput: gen.raw,
       sanitizedOutput: sanitized,
       finalResponse: out,
+      cacheKey,
     });
 
     // Dispatch background evaluation job

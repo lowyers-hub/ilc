@@ -3,13 +3,17 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import OpenAI from 'openai';
 import { AiAuditService } from '../services/ai-audit.service';
+import { RedisCacheService } from '@/common/cache/redis-cache.service';
 
 @Processor('ai-evaluations')
 export class AiEvaluationProcessor extends WorkerHost {
   private readonly logger = new Logger(AiEvaluationProcessor.name);
   private openai: OpenAI | null = null;
 
-  constructor(private readonly audits: AiAuditService) {
+  constructor(
+    private readonly audits: AiAuditService,
+    private readonly cache: RedisCacheService
+  ) {
     super();
     const apiKey = process.env.OPENAI_API_KEY;
     if (apiKey) {
@@ -91,6 +95,14 @@ Respond strictly in JSON format:
       await this.audits.saveEvaluation(requestId, evaluationMetrics);
       this.logger.log(`Successfully evaluated request: ${requestId} | Correctness: ${evaluationMetrics.correctnessScore} | Hallucination: ${evaluationMetrics.hallucinationScore}`);
       
+      // 4. Adaptive Cache: Bypass cache for low-quality responses
+      // If the response is hallucinated or correctness is low, completely delete it from the cache
+      // so that the next identical query bypasses the cache and forces a fresh regeneration.
+      if ((evaluationMetrics.hallucinationScore > 0 || evaluationMetrics.correctnessScore < 0.8) && audit.cacheKey) {
+        this.logger.warn(`Removing low-quality response from cache for request: ${requestId}`);
+        await this.cache.del(audit.cacheKey);
+      }
+
     } catch (error: any) {
       this.logger.error(`Failed to evaluate request ${requestId}: ${error.message}`, error.stack);
       throw error; // Rethrow to trigger BullMQ retry logic

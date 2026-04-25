@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { AiAuditService } from './ai-audit.service';
+import { RedisCacheService } from '@/common/cache/redis-cache.service';
 
 @Injectable()
 export class AiMonitoringService {
@@ -10,7 +11,10 @@ export class AiMonitoringService {
   private readonly MAX_HALLUCINATION_RATE = 0.10; // 10%
   private readonly MIN_CORRECTNESS_SCORE = 0.80; // 80%
 
-  constructor(private readonly audits: AiAuditService) {}
+  constructor(
+    private readonly audits: AiAuditService,
+    private readonly cache: RedisCacheService
+  ) {}
 
   @Cron(CronExpression.EVERY_HOUR) // Run every hour
   async handlePeriodicCheck() {
@@ -28,6 +32,14 @@ export class AiMonitoringService {
       ]);
 
       this.logger.log(`Metrics (Last 24h) | Hallucination: ${(hallucinationRate * 100).toFixed(1)}% | Correctness: ${(correctnessTrend * 100).toFixed(1)}% | Escalation: ${(escalationRate * 100).toFixed(1)}%`);
+
+      // Store health state for adaptive behaviors
+      await this.cache.setJson('ai:health:metrics', {
+        hallucinationRate,
+        correctnessTrend,
+        escalationRate,
+        updatedAt: new Date().toISOString()
+      }, 86400); // 1 day TTL
 
       // Trigger Alerts
       if (hallucinationRate > this.MAX_HALLUCINATION_RATE) {

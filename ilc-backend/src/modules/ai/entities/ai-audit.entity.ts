@@ -59,6 +59,9 @@ export class AiAuditEntity {
   @Column({ type: 'jsonb', nullable: true })
   finalResponse!: any | null;
 
+  @Column({ type: 'text', nullable: true })
+  cacheKey!: string | null;
+
   // Post-generation evaluation metrics
   @Column({ type: 'jsonb', nullable: true })
   evaluations!: {

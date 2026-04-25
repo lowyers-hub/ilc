@@ -21,5 +21,9 @@ export class RedisCacheService {
   async setJson(key: string, value: unknown, ttlSec: number) {
     await this.redis.set(key, JSON.stringify(value), 'EX', ttlSec);
   }
+
+  async del(key: string): Promise<void> {
+    await this.redis.del(key);
+  }
 }
 

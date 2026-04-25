@@ -21,6 +21,18 @@ export class AiAuditService {
     await this.repo.update({ requestId }, { evaluations });
   }
 
+  async getEvaluationsBySessionIds(sessionIds: string[]) {
+    if (sessionIds.length === 0) return [];
+    
+    return this.repo.createQueryBuilder('audit')
+      .select(['audit.id', 'audit.input', 'audit.evaluations'])
+      .where("audit.input->>'sessionId' IN (:...sessionIds)", { sessionIds })
+      .andWhere('audit.evaluations IS NOT NULL')
+      .orderBy("audit.input->>'sessionId'", 'ASC')
+      .addOrderBy('audit.createdAt', 'DESC')
+      .getMany();
+  }
+
   // --- Observability Metrics ---
 
   async getHallucinationRate(startDate: Date, endDate: Date): Promise<number> {

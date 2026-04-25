@@ -8,6 +8,7 @@ import { DocumentEntity } from '@/modules/documents/entities/document.entity';
 
 import { DocumentChunkEntity } from '../entities/document-chunk.entity';
 import { EmbeddingService } from './embedding.service';
+import { RedisCacheService } from '@/common/cache/redis-cache.service';
 
 export type RetrievedChunk = {
   id: string;
@@ -22,7 +23,8 @@ export class RetrievalService {
   constructor(
     @InjectRepository(DocumentChunkEntity) private chunks: Repository<DocumentChunkEntity>,
     private embeddings: EmbeddingService,
-    @InjectRepository(DocumentEntity) private docs: Repository<DocumentEntity>
+    @InjectRepository(DocumentEntity) private docs: Repository<DocumentEntity>,
+    private cache: RedisCacheService
   ) {}
 
   // Replace with pgvector / Pinecone / Weaviate and enforce ACL via userId filters.
@@ -65,11 +67,16 @@ export class RetrievalService {
     if (rows.length === 0) return [];
 
     // 3. Initial Filtering & Conditional Re-ranking
-    // Use vector similarity for initial filtering to drop obvious noise
-    const candidates = rows.filter((r: any) => Number(r.similarity) >= 0.40);
+    // 3. Initial Filtering & Conditional Re-ranking
+    // Fetch global health state to adapt behavior
+    const health = await this.cache.getJson<{ hallucinationRate: number, correctnessTrend: number }>('ai:health:metrics');
+    const isHallucinating = (health?.hallucinationRate || 0) > 0.05; // > 5% hallucination rate triggers stricter behavior
+
+    // If system is hallucinating, increase the base similarity threshold to drop more noise
+    const baseThreshold = isHallucinating ? 0.50 : 0.40;
+    const candidates = rows.filter((r: any) => Number(r.similarity) >= baseThreshold);
     if (candidates.length === 0) return [];
 
-    // 3. Initial Filtering & Conditional Re-ranking
     // Determine query complexity to balance cost vs accuracy dynamically
     const wordCount = args.query.trim().split(/\s+/).length;
     const isShortSimple = wordCount <= 5 && !args.query.includes('?');
@@ -78,8 +85,8 @@ export class RetrievalService {
     let shouldRerank = true;
     if (args.riskLevel === 'high') {
       shouldRerank = true; // Always rerank high-risk legal queries
-    } else if (isComplex) {
-      shouldRerank = true; // Force rerank for complex/ambiguous queries
+    } else if (isComplex || isHallucinating) {
+      shouldRerank = true; // Force rerank for complex queries OR if the system is currently hallucinating
     } else if (isShortSimple) {
       shouldRerank = false; // Skip rerank for short/simple queries
     } else if (args.riskLevel === 'low') {
@@ -101,7 +108,10 @@ export class RetrievalService {
     }
 
     // 4. Confidence Scoring & Filtering
-    const threshold = !shouldRerank ? 0.45 : 0.60; // Lower threshold if we didn't rerank
+    // Increase final threshold dynamically if hallucination is rising
+    const threshold = !shouldRerank 
+      ? (isHallucinating ? 0.55 : 0.45) 
+      : (isHallucinating ? 0.70 : 0.60); 
     
     return scoredChunks
       .filter((r: any) => r.score >= threshold)
