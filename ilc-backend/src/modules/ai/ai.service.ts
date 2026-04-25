@@ -1,9 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
 import OpenAI from 'openai';
 
 import { RedisCacheService } from '@/common/cache/redis-cache.service';
 import { RetrievalService } from '@/modules/rag/services/retrieval.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { ChatSessionEntity } from './entities/chat-session.entity';
+import { ChatMessageEntity } from './entities/chat-message.entity';
 
 import { getPrompt, SPECIALISTS, type LegalCategory } from './prompts/prompt-registry';
 import { AiAuditService } from './services/ai-audit.service';
@@ -19,6 +23,7 @@ export type EscalationMeta = {
 };
 
 export type LegalChatResponse = {
+  sessionId: string; // added to return session back to frontend
   summary: string;
   legalExplanation: string;
   suggestedSteps: string[];
@@ -47,8 +52,20 @@ export class AiService {
     private retrieval: RetrievalService,
     private safety: SafetySanitizerService,
     private cache: RedisCacheService,
-    private audits: AiAuditService
+    private audits: AiAuditService,
+    @InjectRepository(ChatSessionEntity) private sessions: Repository<ChatSessionEntity>,
+    @InjectRepository(ChatMessageEntity) private messages: Repository<ChatMessageEntity>
   ) {}
+
+  async getSessions(userId: string) {
+    return this.sessions.find({ where: { userId }, order: { createdAt: 'DESC' } });
+  }
+
+  async getMessages(userId: string, sessionId: string) {
+    const session = await this.sessions.findOne({ where: { id: sessionId, userId } });
+    if (!session) throw new NotFoundException('Session not found');
+    return this.messages.find({ where: { sessionId }, order: { createdAt: 'ASC' } });
+  }
 
   async classify(message: string): Promise<Classification> {
     const d = classifyDetailed(message);
@@ -60,6 +77,25 @@ export class AiService {
     const requestId = randomUUID();
     const promptVersion = getPrompt('legal-chat-v1').version;
 
+    // Handle Session
+    let sessionId = args.sessionId;
+    if (!sessionId) {
+      const newSession = await this.sessions.save(this.sessions.create({ userId }));
+      sessionId = newSession.id;
+    } else {
+      const existing = await this.sessions.findOne({ where: { id: sessionId, userId } });
+      if (!existing) {
+        throw new NotFoundException('Session not found or belongs to another user');
+      }
+    }
+
+    // Save user message
+    await this.messages.save(this.messages.create({
+      sessionId,
+      role: 'user',
+      content: args.message,
+    }));
+
     const detailed = classifyDetailed(args.message);
     const classification = { category: detailed.categoryLabel, intent: detailed.intent, riskLevel: detailed.riskLevel };
 
@@ -69,14 +105,23 @@ export class AiService {
 
     // Content cache (for UX/perf). We still generate a new requestId and audit record per request.
     const cacheKey = `ai:chat:${promptVersion}:${userId}:${sha1(args.message)}`;
-    const cachedPayload = await this.cache.getJson<Omit<LegalChatResponse, 'requestId' | 'latencyMs' | 'cacheHit'>>(cacheKey);
+    const cachedPayload = await this.cache.getJson<Omit<LegalChatResponse, 'requestId' | 'latencyMs' | 'cacheHit' | 'sessionId'>>(cacheKey);
     if (cachedPayload) {
       const out: LegalChatResponse = {
         ...cachedPayload,
+        sessionId,
         requestId,
         latencyMs: Date.now() - t0,
         cacheHit: true,
       };
+
+      // Save AI message
+      await this.messages.save(this.messages.create({
+        sessionId,
+        role: 'assistant',
+        content: JSON.stringify(out),
+      }));
+
       await this.audits.record({
         requestId,
         userId,
@@ -124,6 +169,7 @@ export class AiService {
 
     const out: LegalChatResponse = {
       ...sanitized,
+      sessionId,
       confidence,
       disclaimer: 'Ini adalah informasi umum, bukan nasihat hukum final.',
       escalation: escalationMeta.escalation,
@@ -136,6 +182,13 @@ export class AiService {
       cacheHit: false,
       retrievedChunkIds,
     };
+
+    // Save AI message
+    await this.messages.save(this.messages.create({
+      sessionId,
+      role: 'assistant',
+      content: JSON.stringify(out),
+    }));
 
     await this.cache.setJson(cacheKey, omitMetaForCache(out), 300);
 
@@ -255,7 +308,7 @@ function parseJsonObject(raw: string): any | null {
 
 function omitMetaForCache(out: LegalChatResponse) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { requestId, latencyMs, cacheHit, ...rest } = out;
+  const { requestId, latencyMs, cacheHit, sessionId, ...rest } = out;
   return rest;
 }
 

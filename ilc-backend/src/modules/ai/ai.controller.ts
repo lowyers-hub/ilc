@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards, NotFoundException } from '@nestjs/common';
 
 import { CurrentUser } from '@/common/auth/current-user.decorator';
 import { JwtAuthGuard } from '@/common/auth/jwt-auth.guard';
@@ -25,6 +25,20 @@ export class AiController {
   @RateLimit({ key: 'ai.chat', limit: 20, windowSec: 60 })
   async chat(@CurrentUser() u: { userId: string }, @Body() dto: ChatDto) {
     return this.ai.chat(u.userId, { message: dto.message, sessionId: dto.sessionId, history: dto.history });
+  }
+
+  @Get('chat/sessions')
+  async getSessions(@CurrentUser() u: { userId: string }) {
+    return this.ai.getSessions(u.userId);
+  }
+
+  @Get('chat/:sessionId/messages')
+  async getMessages(@CurrentUser() u: { userId: string }, @Param('sessionId') sessionId: string) {
+    try {
+      return await this.ai.getMessages(u.userId, sessionId);
+    } catch (e: any) {
+      throw new NotFoundException(e.message);
+    }
   }
 
   @Get('audit/:requestId')
