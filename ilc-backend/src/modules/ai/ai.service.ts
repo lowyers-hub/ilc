@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { createHash, randomUUID } from 'crypto';
@@ -21,7 +21,7 @@ export type ChatHistoryItem = { role: 'user' | 'assistant'; content: string };
 export type EscalationMeta = {
   escalation: boolean;
   reason: string;
-  recommendedSpecialization: 'employment' | 'contract' | 'consumer' | 'criminal' | 'family';
+  recommendedSpecialization: 'employment' | 'contract' | 'consumer' | 'criminal' | 'family' | 'general';
 };
 
 export type LegalChatResponse = {
@@ -50,6 +50,8 @@ export type LegalChatResponse = {
 
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(
     private retrieval: RetrievalService,
     private safety: SafetySanitizerService,
@@ -166,7 +168,7 @@ export class AiService {
 
       for (const s of otherSessions) {
         // Adaptive Memory: Check if this session had a bad evaluation
-        const audit = sessionEvaluations.find(a => a.input?.sessionId === s.id);
+        const audit = sessionEvaluations.find((a: any) => a.input?.sessionId === s.id);
         if (audit && audit.evaluations) {
           const { hallucinationScore = 0, correctnessScore = 1.0 } = audit.evaluations;
           if (hallucinationScore === 1 || correctnessScore < 0.8) {
@@ -358,13 +360,27 @@ export class AiService {
       classification,
       clarifyingQuestions,
       adaptiveTone,
+      confidence,
     });
 
     // Compute regex-based fallback escalation
     const fallbackEscalationMeta = computeEscalation(args.message, detailed);
 
-    // Enforce schema + grounding constraints
-    const validated = validateLegalChatResponse(gen.parsed, retrievedChunkIds);
+    // Enforce schema + grounding constraints with a safe fallback to prevent 500 errors
+    let validated: Omit<LegalChatResponse, 'requestId' | 'promptVersion' | 'model' | 'latencyMs' | 'fallbackUsed' | 'cacheHit' | 'retrievedChunkIds' | 'sessionId'>;
+    try {
+      validated = validateLegalChatResponse(gen.parsed, retrievedChunkIds);
+    } catch (error: any) {
+      this.logger.warn(`LLM Output validation failed: ${error.message}. Triggering safe fallback.`);
+      validated = fallbackLegalChat({
+        message: args.message,
+        retrieved,
+        specialist,
+        clarifyingQuestions,
+        confidence,
+      });
+      gen.fallbackUsed = true;
+    }
     
     // Safety Fallback: If LLM missed high risk that regex caught, override it
     if (!validated.escalation && fallbackEscalationMeta.escalation) {
@@ -374,10 +390,16 @@ export class AiService {
 
     const sanitized = sanitizeLegalChat(validated, this.safety, hasContext);
 
+    // Compute final confidence safely (take the most conservative of system-derived vs LLM-generated)
+    const finalConfidence = 
+      (confidence === 'low' || sanitized.confidence === 'low') ? 'low' :
+      (confidence === 'medium' || sanitized.confidence === 'medium') ? 'medium' :
+      'high';
+
     const out: LegalChatResponse = {
       ...sanitized,
       sessionId,
-      confidence,
+      confidence: finalConfidence,
       disclaimer: 'Ini adalah informasi umum, bukan nasihat hukum final.',
       requestId,
       promptVersion,
@@ -437,6 +459,7 @@ export class AiService {
     classification: Classification;
     clarifyingQuestions: string[];
     adaptiveTone: string;
+    confidence: 'low' | 'medium' | 'high';
   }): Promise<{ raw: string | null; parsed: any; model: string | null; usage: any | null; fallbackUsed: boolean }> {
     const prompt = getPrompt('legal-chat-v1');
     const apiKey = process.env.OPENAI_API_KEY;
@@ -448,7 +471,7 @@ export class AiService {
         model: null,
         usage: null,
         fallbackUsed: true,
-        parsed: fallbackLegalChat(args),
+        parsed: fallbackLegalChat({ ...args, confidence: args.confidence }),
       };
     }
 
@@ -496,7 +519,7 @@ export class AiService {
     const raw = res.choices?.[0]?.message?.content ?? '';
     const parsed = parseJsonObject(raw);
     if (!parsed) {
-      return { raw, parsed: fallbackLegalChat(args), model, usage: res.usage ?? null, fallbackUsed: true };
+      return { raw, parsed: fallbackLegalChat({ ...args, confidence: args.confidence }), model, usage: res.usage ?? null, fallbackUsed: true };
     }
     return { raw, parsed, model, usage: res.usage ?? null, fallbackUsed: false };
   }
@@ -709,23 +732,31 @@ function fallbackLegalChat(args: {
   retrieved: Array<{ id: string; content: string; score: number; source: string }>;
   specialist: { documentChecklist: string[] };
   clarifyingQuestions: string[];
+  confidence: 'low' | 'medium' | 'high';
 }) {
   const hasContext = args.retrieved.length > 0;
   return {
-    summary: `Ringkasan masalah: ${args.message}`,
+    summary: `Triase awal untuk masalah: ${args.message.length > 60 ? args.message.slice(0, 60) + '...' : args.message}`,
     legalExplanation: hasContext
-      ? `Saya menemukan konteks pendukung dari dokumen referensi. Ini membantu, namun tetap perlu verifikasi fakta dan dokumen Anda.`
-      : `Konteks dokumen yang relevan belum cukup. Tanpa konteks, saya tidak akan menyebut pasal/UU tertentu dan fokus pada langkah aman secara umum.`,
+      ? `Berdasarkan pencarian pada sistem, terdapat beberapa referensi hukum yang relevan dengan situasi Anda. Namun, karena saat ini sistem sedang beroperasi dalam mode cadangan (fallback), saya tidak dapat memberikan analisis yang mendalam. Silakan merujuk pada langkah-langkah praktis di bawah ini untuk mengamankan posisi Anda.`
+      : `Saat ini sistem sedang beroperasi dalam mode cadangan (fallback) dan belum menemukan referensi hukum yang spesifik untuk masalah Anda. Oleh karena itu, panduan ini difokuskan pada langkah-langkah aman secara umum. Kami menyarankan Anda untuk tetap berhati-hati dan mendokumentasikan setiap bukti terkait.`,
     suggestedSteps: [
-      ...args.clarifyingQuestions.map((q) => `Klarifikasi: ${q}`),
-      'Susun kronologi (tanggal, pihak, kejadian, bukti).',
-      'Siapkan dokumen pendukung.',
-      'Pertimbangkan komunikasi/permintaan tertulis yang sopan dan terdokumentasi.',
+      ...args.clarifyingQuestions.map((q) => `Mohon klarifikasi: ${q}`),
+      'Susun kronologi kejadian secara berurutan (tanggal, pihak yang terlibat, kejadian, dan bukti).',
+      'Kumpulkan dan amankan semua dokumen pendukung terkait masalah ini.',
+      'Pertimbangkan untuk mengirimkan komunikasi atau permintaan tertulis yang sopan dan terdokumentasi kepada pihak terkait.',
     ],
     requiredDocuments: args.specialist.documentChecklist.slice(0, 6),
-    risks: ['Jika bukti kurang, posisi bisa lemah.', 'Ada risiko salah langkah jika Anda bertindak tanpa data lengkap.'],
-    whenNeedLawyer: ['Jika ada ancaman pidana/panggilan resmi.', 'Jika nilai sengketa besar atau ada tenggat waktu.', 'Jika Anda akan masuk proses litigasi/mediasi formal.'],
-    confidence: hasContext ? 'medium' : 'low',
+    risks: [
+      'Jika bukti yang Anda miliki kurang kuat, posisi Anda bisa menjadi lemah dalam negosiasi atau proses hukum.', 
+      'Terdapat risiko salah langkah jika Anda bertindak secara sepihak tanpa data dan informasi yang lengkap.'
+    ],
+    whenNeedLawyer: [
+      'Jika terdapat ancaman pidana atau Anda menerima panggilan resmi dari kepolisian.', 
+      'Jika nilai sengketa atau kerugian cukup besar, serta jika terdapat tenggat waktu yang ketat.', 
+      'Jika Anda akan memasuki proses mediasi formal atau litigasi di pengadilan.'
+    ],
+    confidence: args.confidence,
     citations: args.retrieved.slice(0, 3).map((c) => ({
       chunkId: c.id,
       source: c.source,
@@ -736,7 +767,7 @@ function fallbackLegalChat(args: {
     escalation: false,
     escalationMeta: {
       escalation: false,
-      reason: 'Fallback logic used',
+      reason: 'Sistem beroperasi dalam mode fallback',
       recommendedSpecialization: 'general' as const
     }
   };
