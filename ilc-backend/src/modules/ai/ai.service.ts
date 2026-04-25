@@ -539,12 +539,6 @@ export class AiService {
           completion_tokens: res.usage.output_tokens,
           total_tokens: res.usage.input_tokens + res.usage.output_tokens
         };
-
-        // If confidence is LOW and mode is auto, we retry with OpenAI
-        if (parsed && parsed.confidence === 'low' && mode === 'auto' && this.openai) {
-          this.logger.warn(`Claude returned LOW confidence. Retrying with OpenAI.`);
-          parsed = null; // Clear to force OpenAI retry
-        }
       } catch (e: any) {
         this.logger.error(`Claude API failed: ${e.message}`);
       }
