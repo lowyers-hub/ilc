@@ -571,7 +571,7 @@ function classifyDetailed(message: string) {
   const categories: string[] = [];
   const categoryLabels: string[] = [];
 
-  if (has(/\b(phk|pesangon|upah|karyawan|pkwt|pkwtt|ketenagakerjaan)\b/)) {
+  if (has(/\b(phk|pesangon|upah|karyawan|pkwt|pkwtt|ketenagakerjaan|dipecat)\b/)) {
     categories.push('employment');
     categoryLabels.push('Employment/PHK');
   }
@@ -595,7 +595,7 @@ function classifyDetailed(message: string) {
     categories.push('family');
     categoryLabels.push('Family');
   }
-  if (has(/\b(pidana|polisi|pengadilan|lapor polisi|penipuan|penggelapan)\b/)) {
+  if (has(/\b(pidana|polisi|pengadilan|lapor polisi|penipuan|penggelapan|ditipu)\b/)) {
     categories.push('criminal');
     categoryLabels.push('Criminal Risk');
   }
@@ -607,7 +607,7 @@ function classifyDetailed(message: string) {
 
   const riskLevel: Classification['riskLevel'] = has(/\b(pidana|polisi|pengadilan|penahanan)\b/)
     ? 'high'
-    : has(/\b(somasi|deadline|jatuh tempo|gugatan)\b/) || categories.includes('contracts') || categories.includes('debt')
+    : has(/\b(somasi|deadline|jatuh tempo|gugatan|menuntut)\b/) || categories.includes('contracts') || categories.includes('debt')
       ? 'medium'
       : 'low';
 
