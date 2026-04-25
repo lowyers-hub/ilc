@@ -400,7 +400,7 @@ export class AiService {
       ...sanitized,
       sessionId,
       confidence: finalConfidence,
-      disclaimer: 'Ini adalah informasi umum, bukan nasihat hukum final.',
+      disclaimer: `PENTING: Ini adalah panduan awal berbasis AI, bukan nasihat hukum final. Tingkat keyakinan AI saat ini: ${finalConfidence.toUpperCase()}. Selalu konsultasikan dengan pengacara untuk mengambil keputusan hukum.`,
       requestId,
       promptVersion,
       model: gen.model,
@@ -647,18 +647,18 @@ function computeEscalation(message: string, d: ReturnType<typeof classifyDetaile
               : 'contract';
 
   const reason = mentionsPolice
-    ? 'Ada indikasi risiko pidana/panggilan aparat.'
+    ? 'Kasus Anda mengandung unsur hukum pidana atau keterlibatan aparat penegak hukum, yang membutuhkan pendampingan pengacara untuk menghindari risiko fatal.'
     : mentionsCourt
-      ? 'Ada indikasi proses litigasi/pengadilan.'
+      ? 'Kasus Anda telah atau akan memasuki proses litigasi di pengadilan, yang mewajibkan prosedur formal dan representasi hukum.'
       : bigMoney
-        ? 'Nilai sengketa tampak besar.'
+        ? 'Nilai sengketa materiil dalam kasus Anda tergolong besar, sehingga pendampingan pengacara sangat disarankan untuk melindungi aset Anda.'
         : mentionsDeadline
-          ? 'Ada tenggat waktu/deadline.'
+          ? 'Terdapat tenggat waktu (deadline) hukum yang mendesak. Keterlambatan bertindak dapat menghilangkan hak hukum Anda.'
           : d.riskLevel === 'high'
-            ? 'Kasus ditandai berisiko tinggi.'
-            : 'Tidak ada';
+            ? 'Sistem mendeteksi bahwa kasus Anda memiliki tingkat risiko hukum yang tinggi dan kompleks.'
+            : 'Tidak ada indikasi eskalasi mendesak.';
 
-  if (reason === 'Tidak ada') escalation = false;
+  if (reason === 'Tidak ada indikasi eskalasi mendesak.') escalation = false;
   return { escalation, reason, recommendedSpecialization };
 }
 
@@ -723,7 +723,7 @@ function sanitizeLegalChat(
     risks: out.risks.map(s),
     whenNeedLawyer: out.whenNeedLawyer.map(s),
     citations: out.citations.map((c) => ({ ...c, snippet: s(c.snippet).slice(0, 280) })),
-    disclaimer: 'Ini adalah informasi umum, bukan nasihat hukum final.',
+    disclaimer: out.disclaimer || 'PENTING: Ini adalah panduan awal berbasis AI, bukan nasihat hukum final. Selalu konsultasikan dengan pengacara untuk mengambil keputusan hukum.',
   };
 }
 
@@ -763,7 +763,7 @@ function fallbackLegalChat(args: {
       score: c.score,
       snippet: c.content.slice(0, 280),
     })),
-    disclaimer: 'Ini adalah informasi umum, bukan nasihat hukum final.',
+    disclaimer: `PENTING: Sistem beroperasi dalam mode fallback. Tingkat keyakinan AI: ${args.confidence.toUpperCase()}. Selalu konsultasikan dengan pengacara untuk mengambil keputusan hukum.`,
     escalation: false,
     escalationMeta: {
       escalation: false,
