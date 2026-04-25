@@ -59,6 +59,17 @@ export class AiAuditEntity {
   @Column({ type: 'jsonb', nullable: true })
   finalResponse!: any | null;
 
+  // Post-generation evaluation metrics
+  @Column({ type: 'jsonb', nullable: true })
+  evaluations!: {
+    correctnessScore?: number; // 0.0 - 1.0
+    hallucinationScore?: number; // 0 (pass) or 1 (fail)
+    usefulnessScore?: number; // 0.0 - 1.0
+    rationale?: string;
+    evaluatedAt?: string;
+    model?: string;
+  } | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 }

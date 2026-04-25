@@ -8,13 +8,17 @@ import { AiAuditEntity } from '../entities/ai-audit.entity';
 export class AiAuditService {
   constructor(@InjectRepository(AiAuditEntity) private repo: Repository<AiAuditEntity>) {}
 
-  async record(audit: Partial<AiAuditEntity>) {
-    const e = this.repo.create(audit);
-    return this.repo.save(e);
+  async record(data: Partial<AiAuditEntity>) {
+    const ent = this.repo.create(data);
+    await this.repo.save(ent);
   }
 
   async findByRequestId(requestId: string) {
     return this.repo.findOne({ where: { requestId } });
+  }
+
+  async saveEvaluation(requestId: string, evaluations: AiAuditEntity['evaluations']) {
+    await this.repo.update({ requestId }, { evaluations });
   }
 }
 
