@@ -64,7 +64,22 @@ export class AiService {
   async getMessages(userId: string, sessionId: string) {
     const session = await this.sessions.findOne({ where: { id: sessionId, userId } });
     if (!session) throw new NotFoundException('Session not found');
-    return this.messages.find({ where: { sessionId }, order: { createdAt: 'ASC' } });
+    const messages = await this.messages.find({ where: { sessionId }, order: { createdAt: 'ASC' } });
+    
+    // Backward compatibility mapping
+    return messages.map(msg => {
+      if (msg.role === 'assistant') {
+        if (msg.meta) {
+          return {
+            ...msg,
+            content: JSON.stringify(msg.meta)
+          };
+        }
+        // Handle legacy messages where content is already JSON stringified
+        return msg;
+      }
+      return msg;
+    });
   }
 
   async classify(message: string): Promise<Classification> {
@@ -94,6 +109,7 @@ export class AiService {
       sessionId,
       role: 'user',
       content: args.message,
+      meta: null,
     }));
 
     const detailed = classifyDetailed(args.message);
@@ -119,7 +135,8 @@ export class AiService {
       await this.messages.save(this.messages.create({
         sessionId,
         role: 'assistant',
-        content: JSON.stringify(out),
+        content: out.summary, // store main message as plain text
+        meta: out, // store structured data in separate JSON column
       }));
 
       await this.audits.record({
@@ -187,7 +204,8 @@ export class AiService {
     await this.messages.save(this.messages.create({
       sessionId,
       role: 'assistant',
-      content: JSON.stringify(out),
+      content: out.summary, // store main message as plain text
+      meta: out, // store structured data in separate JSON column
     }));
 
     await this.cache.setJson(cacheKey, omitMetaForCache(out), 300);

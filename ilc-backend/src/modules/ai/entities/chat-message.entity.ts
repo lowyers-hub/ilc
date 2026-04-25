@@ -15,6 +15,9 @@ export class ChatMessageEntity {
   @Column({ type: 'text' })
   content!: string;
 
+  @Column({ type: 'jsonb', nullable: true })
+  meta!: any | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 }
