@@ -1,6 +1,6 @@
 import { FlashList } from '@shopify/flash-list';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect } from 'react';
 import { ActivityIndicator, Text, TextInput, View } from 'react-native';
 
 import { Button } from '@/src/components/Button';
@@ -198,44 +198,10 @@ function StructuredAI({ msg, isLatest, onSuggestionPress }: { msg: ChatMessage, 
     ? 'Cukup relevan, tetap perlu validasi.' 
     : 'Informasi masih terbatas, perlu verifikasi.';
 
-  const dynamicFollowUps = useMemo(() => {
-    if (!ai.suggestedSteps?.length) return [
-      "Bisakah Anda menjelaskan aspek hukum dari situasi ini secara lebih detail?",
-      "Bisakah Anda membuatkan draf surat terkait masalah ini?"
-    ];
-
-    const contextKeywords = ai.summary.toLowerCase();
-    
-    if (contextKeywords.includes("phk") || contextKeywords.includes("pesangon") || contextKeywords.includes("karyawan")) {
-      return [
-        "Bagaimana cara menghitung pesangon yang seharusnya saya dapat?",
-        "Apakah ada dasar hukum spesifik terkait PHK ini?",
-        "Bisakah Anda buatkan draf surat somasi ke perusahaan?"
-      ];
-    }
-
-    if (contextKeywords.includes("kontrak") || contextKeywords.includes("perjanjian")) {
-      return [
-        "Apa pasal yang paling berisiko dari kontrak ini?",
-        "Bagaimana cara membatalkan perjanjian ini secara sah?",
-        "Bisakah buatkan draf addendum kontrak?"
-      ];
-    }
-
-    if (contextKeywords.includes("utang") || contextKeywords.includes("pinjaman")) {
-      return [
-        "Apa langkah hukum pertama jika debitur kabur?",
-        "Bisakah Anda buatkan draf surat peringatan (somasi) utang?",
-        "Apakah kasus ini bisa masuk ke ranah pidana?"
-      ];
-    }
-
-    return [
-      `Bisakah Anda jelaskan lebih rinci mengenai langkah pertama?`,
-      "Apa dasar hukum (Undang-Undang) yang mengatur hal ini?",
-      "Bisakah Anda membuatkan draf surat/dokumen yang dibutuhkan?"
-    ];
-  }, [ai.summary, ai.suggestedSteps]);
+  const dynamicFollowUps = ai.suggestedFollowUps?.length ? ai.suggestedFollowUps : [
+    "Bisakah Anda menjelaskan aspek hukum dari situasi ini secara lebih detail?",
+    "Bisakah Anda membuatkan draf surat terkait masalah ini?"
+  ];
 
   return (
     <View className="gap-1.5">
@@ -333,7 +299,7 @@ function StructuredAI({ msg, isLatest, onSuggestionPress }: { msg: ChatMessage, 
         <View className="mt-5 border-t border-divider/50 pt-4">
           <Text className="text-text font-semibold mb-3">Saran pertanyaan lanjutan:</Text>
           <View className="gap-2">
-            {dynamicFollowUps.map((question, idx) => (
+            {dynamicFollowUps.map((question: string, idx: number) => (
               <Button 
                 key={idx}
                 title={question} 

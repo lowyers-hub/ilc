@@ -62,8 +62,9 @@ export type ChatMessage = {
   structured?: {
     summary: string;
     legalExplanation: string;
-    suggestedSteps: string[];
-    requiredDocuments: string[];
+  suggestedSteps: string[];
+  suggestedFollowUps?: string[];
+  requiredDocuments: string[];
     risks: string[];
     escalation: boolean;
     disclaimer: string;

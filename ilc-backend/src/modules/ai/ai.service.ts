@@ -30,6 +30,7 @@ export type LegalChatResponse = {
   summary: string;
   legalExplanation: string;
   suggestedSteps: string[];
+  suggestedFollowUps: string[];
   requiredDocuments: string[];
   risks: string[];
   whenNeedLawyer: string[];
@@ -754,6 +755,7 @@ function validateLegalChatResponse(obj: any, retrievedChunkIds: string[]): Omit<
     summary: obj.summary,
     legalExplanation: obj.legalExplanation,
     suggestedSteps: obj.suggestedSteps.map(String),
+    suggestedFollowUps: Array.isArray(obj.suggestedFollowUps) ? obj.suggestedFollowUps.map(String) : [],
     requiredDocuments: obj.requiredDocuments.map(String),
     risks: obj.risks.map(String),
     whenNeedLawyer: obj.whenNeedLawyer.map(String),
@@ -780,6 +782,7 @@ function sanitizeLegalChat(
     summary: s(out.summary),
     legalExplanation: s(out.legalExplanation),
     suggestedSteps: out.suggestedSteps.map(s),
+    suggestedFollowUps: out.suggestedFollowUps.map(s),
     requiredDocuments: out.requiredDocuments.map(s),
     risks: out.risks.map(s),
     whenNeedLawyer: out.whenNeedLawyer.map(s),
@@ -807,6 +810,7 @@ function fallbackLegalChat(args: {
       'Kumpulkan dan amankan semua dokumen pendukung terkait masalah ini.',
       'Pertimbangkan untuk mengirimkan komunikasi atau permintaan tertulis yang sopan dan terdokumentasi kepada pihak terkait.',
     ],
+    suggestedFollowUps: ['Apa yang harus saya lakukan sekarang?', 'Bisakah Anda mencoba lagi?'],
     requiredDocuments: args.specialist.documentChecklist.slice(0, 6),
     risks: [
       'Jika bukti yang Anda miliki kurang kuat, posisi Anda bisa menjadi lemah dalam negosiasi atau proses hukum.', 
