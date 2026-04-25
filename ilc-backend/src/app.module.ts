@@ -12,6 +12,7 @@ import { PaymentsModule } from '@/modules/payments/payments.module';
 import { RagModule } from '@/modules/rag/rag.module';
 import { UsersModule } from '@/modules/users/users.module';
 import { WebhooksModule } from '@/modules/webhooks/webhooks.module';
+import { AppController } from './app.controller';
 
 @Module({
   imports: [
@@ -38,5 +39,6 @@ import { WebhooksModule } from '@/modules/webhooks/webhooks.module';
     AiModule,
     WebhooksModule,
   ],
+  controllers: [AppController]
 })
 export class AppModule {}
