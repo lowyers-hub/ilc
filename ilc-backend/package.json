@@ -1,0 +1,48 @@
+{
+  "name": "ilc-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/main.js",
+  "scripts": {
+    "start": "node dist/main.js",
+    "start:dev": "ts-node -r tsconfig-paths/register src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "migration:run": "ts-node -r tsconfig-paths/register node_modules/typeorm/cli.js -d src/data-source.ts migration:run",
+    "migration:revert": "ts-node -r tsconfig-paths/register node_modules/typeorm/cli.js -d src/data-source.ts migration:revert",
+    "migration:generate": "ts-node -r tsconfig-paths/register node_modules/typeorm/cli.js -d src/data-source.ts migration:generate",
+    "seed:kb": "ts-node -r tsconfig-paths/register src/scripts/seed-kb.ts",
+    "test": "node -e \"console.log('tests stub')\""
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@nestjs/bullmq": "^11.0.4",
+    "@nestjs/common": "^11.1.19",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/core": "^11.1.19",
+    "@nestjs/jwt": "^11.0.2",
+    "@nestjs/passport": "^11.0.5",
+    "@nestjs/platform-express": "^11.1.19",
+    "@nestjs/typeorm": "^11.0.1",
+    "axios": "^1.15.2",
+    "bullmq": "^5.76.1",
+    "class-transformer": "^0.5.1",
+    "class-validator": "^0.15.1",
+    "ioredis": "^5.10.1",
+    "openai": "^6.34.0",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "pg": "^8.20.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "typeorm": "^0.3.28"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/passport-jwt": "^4.0.1",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^6.0.3"
+  }
+}

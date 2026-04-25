@@ -1,0 +1,22 @@
+export const qk = {
+  me: () => ['me'] as const,
+  entitlements: () => ['entitlements'] as const,
+  chatSessions: () => ['chatSessions'] as const,
+  chatMessages: (sessionId: string) => ['chatMessages', sessionId] as const,
+  documents: () => ['documents'] as const,
+  document: (docId: string) => ['document', docId] as const,
+  ocr: (docId: string) => ['ocr', docId] as const,
+  risk: (docId: string) => ['risk', docId] as const,
+  templates: () => ['contractTemplates'] as const,
+  drafts: () => ['contractDrafts'] as const,
+  draft: (draftId: string) => ['contractDraft', draftId] as const,
+  forumCategories: () => ['forumCategories'] as const,
+  forumTopics: (categoryId: string) => ['forumTopics', categoryId] as const,
+  forumPosts: (topicId: string) => ['forumPosts', topicId] as const,
+  lawyers: () => ['lawyers'] as const,
+  lawyer: (lawyerId: string) => ['lawyer', lawyerId] as const,
+  consultations: () => ['consultations'] as const,
+  consultation: (consultationId: string) => ['consultation', consultationId] as const,
+
+  payment: (paymentId: string) => ['payment', paymentId] as const,
+};
