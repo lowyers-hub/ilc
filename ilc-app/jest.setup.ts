@@ -1,4 +1,5 @@
 import 'whatwg-fetch';
+import 'react-native-gesture-handler/jestSetup';
 
 // Stable default envs for tests.
 process.env.EXPO_PUBLIC_API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost';

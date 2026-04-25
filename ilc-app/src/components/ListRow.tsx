@@ -1,7 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-
-import { useTheme } from '@/src/lib/theme/useTheme';
+import { Pressable, Text, View } from 'react-native';
 
 export function ListRow({
   title,
@@ -14,25 +12,22 @@ export function ListRow({
   right?: React.ReactNode;
   onPress?: () => void;
 }) {
-  const { palette, tokens } = useTheme();
   const Comp: any = onPress ? Pressable : View;
 
   return (
     <Comp
       accessibilityRole={onPress ? 'button' : undefined}
       onPress={onPress}
-      style={({ pressed }: any) => [
-        styles.row,
-        { borderBottomColor: palette.divider, paddingVertical: tokens.space.md },
-        onPress && { opacity: pressed ? 0.7 : 1 },
-      ]}
+      className={`flex-row items-center justify-between border-b border-divider py-3 min-h-[44px] transition-colors duration-200 ${
+        onPress ? 'hover:bg-black/5 dark:hover:bg-white/5 active:opacity-70 cursor-pointer' : ''
+      }`}
     >
-      <View style={styles.left}>
-        <Text style={[styles.title, { color: palette.text }]} numberOfLines={1}>
+      <View className="flex-1 pr-3">
+        <Text className="text-text text-base font-semibold" numberOfLines={1}>
           {title}
         </Text>
         {subtitle ? (
-          <Text style={[styles.subtitle, { color: palette.subtext }]} numberOfLines={2}>
+          <Text className="text-subtext text-[13px] mt-1" numberOfLines={2}>
             {subtitle}
           </Text>
         ) : null}
@@ -41,16 +36,4 @@ export function ListRow({
     </Comp>
   );
 }
-
-const styles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  left: { flex: 1, paddingRight: 12 },
-  title: { fontSize: 16, fontWeight: '600' },
-  subtitle: { marginTop: 4, fontSize: 13 },
-});
 

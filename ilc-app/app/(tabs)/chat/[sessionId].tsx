@@ -1,6 +1,7 @@
+import { FlashList } from '@shopify/flash-list';
 import { router, useLocalSearchParams } from 'expo-router';
 import React from 'react';
-import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
 
 import { Button } from '@/src/components/Button';
 import { Chip } from '@/src/components/Chip';
@@ -68,7 +69,7 @@ export default function ChatThreadScreen() {
         Konsultasi
       </Text>
 
-      <FlatList
+      <FlashList
         data={list}
         keyExtractor={(m) => m.id}
         contentContainerStyle={{ paddingBottom: 120 }}

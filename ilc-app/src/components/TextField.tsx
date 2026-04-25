@@ -1,44 +1,25 @@
 import React from 'react';
-import { StyleSheet, Text, TextInput, type TextInputProps, View } from 'react-native';
-
-import { useTheme } from '@/src/lib/theme/useTheme';
+import { Text, TextInput, type TextInputProps, View } from 'react-native';
 
 export function TextField({
   label,
   error,
   ...props
 }: TextInputProps & { label?: string; error?: string }) {
-  const { palette, tokens } = useTheme();
-
   return (
-    <View style={{ gap: tokens.space.xs }}>
-      {label ? <Text style={[styles.label, { color: palette.subtext }]}>{label}</Text> : null}
+    <View className="flex-col gap-1">
+      {label ? <Text className="text-subtext text-[13px] font-medium">{label}</Text> : null}
       <TextInput
-        placeholderTextColor={palette.subtext}
-        style={[
-          styles.input,
-          {
-            backgroundColor: palette.surface,
-            color: palette.text,
-            borderColor: error ? palette.danger : palette.divider,
-            borderRadius: tokens.radius.md,
-          },
-        ]}
+        placeholderTextColor="var(--color-subtext)"
+        className={`px-[14px] py-3 border text-base rounded-xl bg-surface text-text outline-none transition-colors duration-200 ${
+          error
+            ? 'border-danger focus:ring-1 focus:ring-danger focus:border-danger'
+            : 'border-divider hover:border-gray-400 dark:hover:border-gray-500 focus:ring-1 focus:ring-accent focus:border-accent'
+        }`}
         {...props}
       />
-      {error ? <Text style={[styles.error, { color: palette.danger }]}>{error}</Text> : null}
+      {error ? <Text className="text-danger text-xs">{error}</Text> : null}
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  label: { fontSize: 13, fontWeight: '500' },
-  input: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderWidth: 1,
-    fontSize: 16,
-  },
-  error: { fontSize: 12 },
-});
 

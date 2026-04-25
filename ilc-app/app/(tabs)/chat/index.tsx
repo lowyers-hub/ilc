@@ -1,6 +1,7 @@
+import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import React from 'react';
-import { FlatList, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { Button } from '@/src/components/Button';
 import { ListRow } from '@/src/components/ListRow';
@@ -26,7 +27,7 @@ export default function ChatHomeScreen() {
         />
       </View>
 
-      <FlatList
+      <FlashList
         data={sessions.data ?? []}
         keyExtractor={(i) => i.id}
         refreshing={sessions.isFetching}

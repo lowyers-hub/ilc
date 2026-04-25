@@ -1,21 +1,13 @@
 import React from 'react';
-import { SafeAreaView, StyleSheet, View, type ViewProps } from 'react-native';
-
-import { useTheme } from '@/src/lib/theme/useTheme';
+import { SafeAreaView, View, type ViewProps } from 'react-native';
 
 export function Screen({ style, children, ...props }: ViewProps) {
-  const { palette } = useTheme();
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: palette.bg }]}>
-      <View style={[styles.inner, style]} {...props}>
+    <SafeAreaView className="flex-1 bg-bg">
+      <View className="flex-1 w-full max-w-5xl mx-auto" style={style} {...props}>
         {children}
       </View>
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  inner: { flex: 1 },
-});
 

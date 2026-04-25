@@ -1,53 +1,56 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
-
-import { useTheme } from '@/src/lib/theme/useTheme';
+import { Pressable, StyleSheet, Text, type PressableProps, type StyleProp, type ViewStyle, Platform, ActivityIndicator } from 'react-native';
+import * as Haptics from 'expo-haptics';
 
 type Variant = 'primary' | 'secondary' | 'ghost';
 
-type ButtonProps = Omit<PressableProps, 'style'> & { title: string; variant?: Variant; style?: StyleProp<ViewStyle> };
+type ButtonProps = Omit<PressableProps, 'style'> & { 
+  title: string; 
+  variant?: Variant; 
+  style?: StyleProp<ViewStyle>;
+  isLoading?: boolean;
+};
 
-export function Button({ title, variant = 'primary', disabled, style, ...props }: ButtonProps) {
-  const { palette, tokens } = useTheme();
+export function Button({ title, variant = 'primary', disabled, isLoading, style, ...props }: ButtonProps) {
+  const handlePress = (e: any) => {
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    if (props.onPress) props.onPress(e);
+  };
 
-  const bg =
-    variant === 'primary'
-      ? palette.accent
-      : variant === 'secondary'
-        ? palette.surface
-        : 'transparent';
+  const baseClasses = "flex-row items-center justify-center rounded-xl min-h-[44px] px-4 border border-transparent transition-colors duration-200";
+  
+  const variantClasses = {
+    primary: "bg-accent hover:bg-opacity-80 active:bg-opacity-90",
+    secondary: "bg-surface border-divider hover:bg-opacity-80 active:bg-opacity-90",
+    ghost: "bg-transparent hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10",
+  };
 
-  const borderColor = variant === 'secondary' ? palette.divider : 'transparent';
-  const textColor = variant === 'primary' ? '#fff' : palette.text;
+  const textClasses = {
+    primary: "text-white font-semibold text-base",
+    secondary: "text-text font-semibold text-base",
+    ghost: "text-accent font-semibold text-base",
+  };
+
+  const isDisabled = disabled || isLoading;
 
   return (
     <Pressable
       accessibilityRole="button"
-      disabled={disabled}
-      style={({ pressed }) => [
-        styles.base,
-        {
-          backgroundColor: bg,
-          borderColor,
-          opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
-          borderRadius: tokens.radius.md,
-        },
-        style,
-      ]}
+      accessibilityState={{ disabled: isDisabled }}
+      disabled={isDisabled}
+      onPress={handlePress}
+      className={`${baseClasses} ${variantClasses[variant]} ${isDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+      style={style as any}
       {...props}
     >
-      <Text style={[styles.text, { color: textColor }]}>{title}</Text>
+      {isLoading ? (
+        <ActivityIndicator color={variant === 'primary' ? 'white' : 'currentColor'} />
+      ) : (
+        <Text className={textClasses[variant]}>{title}</Text>
+      )}
     </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  base: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  text: { fontSize: 16, fontWeight: '600' },
-});
